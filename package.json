@@ -1,0 +1,57 @@
+{
+  "name": "@iwonz/yeelight-controller",
+  "version": "1.0.0",
+  "description": "Library for using Yeelight WiFi Light Inter-Operation Specification",
+  "keywords": [
+    "yeelight bulbs wifi"
+  ],
+  "repository": "https://github.com/iwonz/yeelight-controller.git",
+  "author": "iwonz <iwonz@yandex.ru>",
+  "license": "MIT",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "files": [
+    "dist/"
+  ],
+  "types": "dist/typings/index.d.ts",
+  "bugs": {
+    "url": "https://github.com/iwonz/yeelight-controller/issues"
+  },
+  "homepage": "https://github.com/iwonz/yeelight-controller#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "rimraf dist && npm run tsc",
+    "tsc": "./node_modules/.bin/tsc -p tsconfig.json && tsc -p tsconfig-cjs.json",
+    "prepublish": "npm run build",
+    "test": "echo \"Error: no test specified\" && exit 0",
+    "release": "np",
+    "doc": "typedoc src --excludeExternals"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "lint-staged": {
+    "*.{js,ts}": [
+      "eslint --fix"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^14.14.5",
+    "@typescript-eslint/eslint-plugin": "^4.6.0",
+    "@typescript-eslint/parser": "^4.6.0",
+    "eslint": "^7.12.1",
+    "eslint-config-prettier": "^6.15.0",
+    "eslint-plugin-prettier": "^3.1.4",
+    "husky": "^4.3.0",
+    "lint-staged": "^10.5.0",
+    "np": "*",
+    "prettier": "^2.1.2",
+    "rimraf": "^3.0.2",
+    "typedoc": "^0.22.10",
+    "typescript": "^4.5.4"
+  }
+}
