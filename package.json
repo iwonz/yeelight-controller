@@ -1,6 +1,6 @@
 {
   "name": "@iwonz/yeelight-controller",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Library for using Yeelight WiFi Light Inter-Operation Specification",
   "keywords": [
     "yeelight bulbs wifi"
