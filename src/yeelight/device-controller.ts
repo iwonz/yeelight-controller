@@ -1,4 +1,4 @@
-import { YeelightDevice } from './device';
+import { YeelightDevice, YeelightDeviceOptions } from './device';
 import {
   YeelightAdjustAction,
   YeelightAdjustProp,
@@ -20,8 +20,8 @@ import {
 import { clamp } from '../utils';
 
 export class YeelightDeviceController extends YeelightDevice {
-  constructor(state: YeelightDeviceInfo) {
-    super(state);
+  constructor(state: YeelightDeviceInfo, options: YeelightDeviceOptions = {}) {
+    super(state, options);
   }
 
   public getProps(props: YeelightProps[]): Promise<YeelightDeviceProps> {

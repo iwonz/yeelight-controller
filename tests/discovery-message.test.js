@@ -26,6 +26,9 @@ test('parses discovery headers case-insensitively and without required whitespac
     model: 'color',
     version: 42,
     support: ['get_prop', 'set_power', 'toggle'],
+    props: {
+      power: 'on',
+    },
     headers: {
       id: '0xabc',
       location: 'yeelight://192.168.1.20:55443',

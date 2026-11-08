@@ -3,23 +3,27 @@ import dgram from 'dgram';
 import { YeelightCommand, YeelightDeviceEvents, YeelightDiscoveryEvents, YeelightMethod } from './types';
 import { YeelightDeviceController } from './device-controller';
 import { parseYeelightDiscoveryMessage } from './discovery-message';
+import { YeelightDeviceOptions } from './device';
 
 const MULTICAST_IP = '239.255.255.250';
 const MULTICAST_PORT = 1982;
 
 export interface YeelightDiscoveryOptions {
   socketFactory?: () => dgram.Socket;
+  deviceFactory?: (state: ConstructorParameters<typeof YeelightDeviceController>[0], options: YeelightDeviceOptions) => YeelightDeviceController;
 }
 
 export class YeelightDiscovery extends EventEmitter {
   private socket: dgram.Socket | null = null;
   private devices: Map<string, YeelightDeviceController> = new Map();
   private readonly socketFactory: () => dgram.Socket;
+  private readonly deviceFactory: NonNullable<YeelightDiscoveryOptions['deviceFactory']>;
 
   constructor(options: YeelightDiscoveryOptions = {}) {
     super();
 
-    this.socketFactory = options.socketFactory ?? (() => dgram.createSocket('udp4'));
+    this.socketFactory = options.socketFactory ?? (() => dgram.createSocket({ type: 'udp4', reuseAddr: true }));
+    this.deviceFactory = options.deviceFactory ?? ((state, deviceOptions) => new YeelightDeviceController(state, deviceOptions));
   }
 
   public activate(): void {
@@ -37,13 +41,7 @@ export class YeelightDiscovery extends EventEmitter {
 
       try {
         socket.addMembership(MULTICAST_IP);
-
-        const buffer = Buffer.from('M-SEARCH * HTTP/1.1\r\nMAN: "ssdp:discover"\r\nST: wifi_bulb\r\n');
-        socket.send(buffer, 0, buffer.length, MULTICAST_PORT, MULTICAST_IP, (sendError) => {
-          if (sendError) {
-            this.handleSocketError(socket, sendError);
-          }
-        });
+        this.rescan();
       } catch (error) {
         this.handleSocketError(socket, error instanceof Error ? error : new Error(String(error)));
       }
@@ -55,11 +53,11 @@ export class YeelightDiscovery extends EventEmitter {
 
     socket.on('message', (deviceInfo: Buffer) => {
       const message = parseYeelightDiscoveryMessage(deviceInfo);
-      if (!message || this.devices.has(message.id)) {
+      if (!message) {
         return;
       }
 
-      const device = new YeelightDeviceController({
+      const state = {
         id: message.id,
         model: message.model,
         version: message.version,
@@ -67,7 +65,17 @@ export class YeelightDiscovery extends EventEmitter {
         location: message.location,
         host: message.host,
         port: message.port,
-      });
+      };
+      const existingDevice = this.devices.get(message.id);
+      if (existingDevice) {
+        existingDevice.updateFromDiscovery(state, message.props);
+        if (!existingDevice.isConnected()) {
+          this.connectDevice(existingDevice);
+        }
+        return;
+      }
+
+      const device = this.deviceFactory(state, { initialProps: message.props });
 
       this.devices.set(device.getId(), device);
       this.emit(YeelightDiscoveryEvents.DISCOVER_DEVICE, device);
@@ -77,7 +85,6 @@ export class YeelightDiscovery extends EventEmitter {
       });
 
       device.on(YeelightDeviceEvents.DISCONNECT, (deviceError) => {
-        this.devices.delete(device.getId());
         this.emit(YeelightDiscoveryEvents.DISCONNECT_DEVICE, device, deviceError);
       });
 
@@ -93,9 +100,7 @@ export class YeelightDiscovery extends EventEmitter {
         this.emit(YeelightDiscoveryEvents.DEVICE_ERROR, device, deviceError);
       });
 
-      void device.connect().catch((deviceError) => {
-        this.emit(YeelightDiscoveryEvents.DEVICE_ERROR, device, deviceError);
-      });
+      this.connectDevice(device);
     });
 
     try {
@@ -137,6 +142,20 @@ export class YeelightDiscovery extends EventEmitter {
     }
   }
 
+  public rescan(): void {
+    const socket = this.socket;
+    if (!socket) {
+      return;
+    }
+
+    const buffer = Buffer.from('M-SEARCH * HTTP/1.1\r\nMAN: "ssdp:discover"\r\nST: wifi_bulb\r\n');
+    socket.send(buffer, 0, buffer.length, MULTICAST_PORT, MULTICAST_IP, (sendError) => {
+      if (sendError) {
+        this.handleSocketError(socket, sendError);
+      }
+    });
+  }
+
   public command(command: YeelightCommand): Promise<any[]> {
     const promises: any[] = [];
 
@@ -170,5 +189,11 @@ export class YeelightDiscovery extends EventEmitter {
 
     this.emit(YeelightDiscoveryEvents.ERROR, error);
     void this.deactivate(error);
+  }
+
+  private connectDevice(device: YeelightDeviceController): void {
+    void device.connect().catch((deviceError) => {
+      this.emit(YeelightDiscoveryEvents.DEVICE_ERROR, device, deviceError);
+    });
   }
 }

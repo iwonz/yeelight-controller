@@ -1,4 +1,5 @@
 import { URL } from 'url';
+import { YEELIGHT_PROPS, YeelightDeviceProps } from './types';
 
 export interface YeelightDiscoveryMessage {
   kind: 'response' | 'advertisement';
@@ -9,6 +10,7 @@ export interface YeelightDiscoveryMessage {
   model?: string;
   version?: number;
   support?: string[];
+  props: YeelightDeviceProps;
   headers: Record<string, string>;
 }
 
@@ -59,6 +61,12 @@ export const parseYeelightDiscoveryMessage = (input: string | Buffer): YeelightD
 
   const version = headers.fw_ver === undefined ? undefined : Number(headers.fw_ver);
   const support = headers.support?.split(/\s+/).filter(Boolean);
+  const props: YeelightDeviceProps = {};
+  YEELIGHT_PROPS.forEach((prop) => {
+    if (headers[prop] !== undefined) {
+      props[prop] = headers[prop];
+    }
+  });
 
   return {
     kind,
@@ -69,6 +77,7 @@ export const parseYeelightDiscoveryMessage = (input: string | Buffer): YeelightD
     ...(headers.model ? { model: headers.model } : {}),
     ...(Number.isFinite(version) ? { version } : {}),
     ...(support ? { support } : {}),
+    props,
     headers,
   };
 };

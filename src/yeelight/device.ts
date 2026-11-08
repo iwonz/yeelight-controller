@@ -25,6 +25,7 @@ interface PendingCommand {
 
 export interface YeelightDeviceOptions {
   commandTimeout?: number;
+  initialProps?: YeelightDeviceProps;
 }
 
 export class YeelightDevice extends EventEmitter {
@@ -41,11 +42,13 @@ export class YeelightDevice extends EventEmitter {
   private connectPromise: Promise<void> | null = null;
   private connectResolve: (() => void) | null = null;
   private connectReject: ((reason: any) => void) | null = null;
+  private lastSeen = Date.now();
 
   constructor(state: YeelightDeviceInfo, options: YeelightDeviceOptions = {}) {
     super();
 
     this.device = state;
+    this.props = { ...options.initialProps };
     this.commandTimeout = options.commandTimeout ?? 5000;
   }
 
@@ -252,6 +255,29 @@ export class YeelightDevice extends EventEmitter {
 
   public getName(): string {
     return this.props?.name || '';
+  }
+
+  public getProperties(): Readonly<YeelightDeviceProps> {
+    return { ...this.props };
+  }
+
+  public getLastSeen(): number {
+    return this.lastSeen;
+  }
+
+  public updateFromDiscovery(state: YeelightDeviceInfo, props: YeelightDeviceProps): void {
+    this.device = { ...this.device, ...state };
+    this.lastSeen = Date.now();
+
+    const changed = Object.keys(props).some((prop) => {
+      const property = prop as keyof YeelightDeviceProps;
+      return this.props[property] !== props[property];
+    });
+    this.props = { ...this.props, ...props };
+
+    if (changed) {
+      this.emit(YeelightDeviceEvents.PROPS_CHANGE, { ...this.props });
+    }
   }
 
   private processCommandId(): number {
