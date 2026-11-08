@@ -1,8 +1,8 @@
 import EventEmitter from 'events';
 import dgram from 'dgram';
-import url from 'url';
-import { YeelightCommand, YeelightDeviceEvents, YeelightDiscoveryEvents } from './types';
+import { YeelightCommand, YeelightDeviceEvents, YeelightDiscoveryEvents, YeelightMethod } from './types';
 import { YeelightDeviceController } from './device-controller';
+import { parseYeelightDiscoveryMessage } from './discovery-message';
 
 const MULTICAST_IP = '239.255.255.250';
 const MULTICAST_PORT = 1982;
@@ -54,34 +54,19 @@ export class YeelightDiscovery extends EventEmitter {
     });
 
     socket.on('message', (deviceInfo: Buffer) => {
-      const headers: any = {};
-
-      deviceInfo
-        .toString()
-        .split('\r\n')
-        .forEach((header) => {
-          ['id', 'Location', 'fw_ver', 'model', 'support'].forEach((supportedHeader) => {
-            const checkHeader = supportedHeader + ':';
-
-            if (header.indexOf(checkHeader) >= 0) {
-              headers[supportedHeader] = header.slice(checkHeader.length + 1);
-            }
-          });
-        });
-
-      if (!headers.id || !headers.Location || this.devices.has(headers.id)) {
+      const message = parseYeelightDiscoveryMessage(deviceInfo);
+      if (!message || this.devices.has(message.id)) {
         return;
       }
 
-      const parsedUrl = url.parse(headers.Location);
       const device = new YeelightDeviceController({
-        id: headers.id,
-        model: headers.model,
-        version: headers.fw_ver,
-        support: headers.support?.split(' '),
-        location: headers.Location,
-        host: String(parsedUrl.hostname),
-        port: Number(parsedUrl.port),
+        id: message.id,
+        model: message.model,
+        version: message.version,
+        support: message.support as YeelightMethod[] | undefined,
+        location: message.location,
+        host: message.host,
+        port: message.port,
       });
 
       this.devices.set(device.getId(), device);
