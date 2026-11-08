@@ -7,6 +7,7 @@ const {
   YeelightDeviceEvents,
   YeelightCommandTimeoutError,
   YeelightConnectionClosedError,
+  YeelightDuplicateCommandIdError,
   YeelightMethod,
   YeelightNotConnectedError,
   YeelightProtocolError,
@@ -154,4 +155,62 @@ test('rejects pending commands when the connection closes', async (t) => {
     assert.equal(error.cause.message, 'connection lost');
     return true;
   });
+});
+
+test('preserves command id zero when correlating a response', async (t) => {
+  let receivedId;
+  const fixture = await connectDevice((command, socket) => {
+    receivedId = command.id;
+    sendMessage(socket, { id: command.id, result: ['ok'] });
+  }, { commandTimeout: 30 });
+  t.after(() => fixture.close());
+
+  const result = await withTimeout(
+    fixture.device.command({ id: 0, method: YeelightMethod.TOGGLE, params: [] }),
+  );
+
+  assert.equal(receivedId, 0);
+  assert.deepEqual(result, ['ok']);
+});
+
+test('replaces an explicitly undefined command id', async (t) => {
+  let receivedId;
+  const fixture = await connectDevice((command, socket) => {
+    receivedId = command.id;
+    sendMessage(socket, { id: command.id, result: ['ok'] });
+  }, { commandTimeout: 30 });
+  t.after(() => fixture.close());
+
+  const result = await withTimeout(
+    fixture.device.command({ id: undefined, method: YeelightMethod.TOGGLE, params: [] }),
+  );
+
+  assert.equal(typeof receivedId, 'number');
+  assert.deepEqual(result, ['ok']);
+});
+
+test('rejects duplicate active command ids without replacing the first command', async (t) => {
+  let firstSocket;
+  let receivedFirst;
+  const firstReceived = new Promise((resolve) => {
+    receivedFirst = resolve;
+  });
+  const fixture = await connectDevice((command, socket) => {
+    firstSocket = socket;
+    receivedFirst();
+  }, { commandTimeout: 100 });
+  t.after(() => fixture.close());
+
+  const first = fixture.device.command({ id: 99, method: YeelightMethod.TOGGLE, params: [] });
+  await withTimeout(firstReceived);
+  const duplicate = fixture.device.command({ id: 99, method: YeelightMethod.TOGGLE, params: [] });
+
+  await assert.rejects(duplicate, (error) => {
+    assert.ok(error instanceof YeelightDuplicateCommandIdError);
+    assert.equal(error.commandId, 99);
+    return true;
+  });
+
+  sendMessage(firstSocket, { id: 99, result: ['ok'] });
+  assert.deepEqual(await withTimeout(first), ['ok']);
 });

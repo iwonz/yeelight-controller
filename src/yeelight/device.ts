@@ -11,6 +11,7 @@ import {
 import {
   YeelightCommandTimeoutError,
   YeelightConnectionClosedError,
+  YeelightDuplicateCommandIdError,
   YeelightNotConnectedError,
   YeelightProtocolError,
 } from './errors';
@@ -61,7 +62,7 @@ export class YeelightDevice extends EventEmitter {
 
               this.emit(YeelightDeviceEvents.DATA, response);
 
-              if (response.id && this.pendingCommands.has(response.id)) {
+              if (response.id !== undefined && response.id !== null && this.pendingCommands.has(response.id)) {
                 const pendingCommand = this.pendingCommands.get(response.id);
                 this.pendingCommands.delete(response.id);
                 if (pendingCommand) {
@@ -147,8 +148,12 @@ export class YeelightDevice extends EventEmitter {
       return Promise.reject(new YeelightNotConnectedError());
     }
 
+    const id = command.id ?? this.processCommandId();
+    if (this.pendingCommands.has(id)) {
+      return Promise.reject(new YeelightDuplicateCommandIdError(id));
+    }
+
     return new Promise((resolve, reject) => {
-      const id = command.id || this.processCommandId();
       const timeout = setTimeout(() => {
         if (this.pendingCommands.delete(id)) {
           reject(new YeelightCommandTimeoutError(id, command.method, this.commandTimeout));
@@ -160,8 +165,8 @@ export class YeelightDevice extends EventEmitter {
       try {
         socket.write(
           JSON.stringify({
-            id,
             ...command,
+            id,
           }) + '\r\n',
         );
       } catch (error) {

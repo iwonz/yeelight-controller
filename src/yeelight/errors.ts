@@ -37,6 +37,17 @@ export class YeelightCommandTimeoutError extends Error {
   }
 }
 
+export class YeelightDuplicateCommandIdError extends Error {
+  public readonly commandId: number;
+
+  constructor(commandId: number) {
+    super(`Yeelight command id ${commandId} is already pending`);
+    this.name = 'YeelightDuplicateCommandIdError';
+    this.commandId = commandId;
+    Object.setPrototypeOf(this, YeelightDuplicateCommandIdError.prototype);
+  }
+}
+
 export class YeelightProtocolError extends Error {
   public readonly code: number;
   public readonly commandId: number;
