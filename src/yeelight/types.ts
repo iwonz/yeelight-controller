@@ -84,7 +84,7 @@ export enum YeelightSceneClass {
   HSV = 'hsv',
   CT = 'ct',
   CF = 'cf',
-  AUTO_DELAY_OFF = 'auto_dealy_off',
+  AUTO_DELAY_OFF = 'auto_delay_off',
 }
 
 export enum YeelightMethod {
