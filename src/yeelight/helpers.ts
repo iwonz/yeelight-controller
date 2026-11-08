@@ -13,5 +13,5 @@ export const getFlowExpression = (
     value = clamp(value, 1700, 6500);
   }
 
-  return [clamp(duration, 50), mode, value, brightness === -1 ? -1 : clamp(duration, 1, 100)];
+  return [clamp(duration, 50), mode, value, brightness === -1 ? -1 : clamp(brightness, 1, 100)];
 };
