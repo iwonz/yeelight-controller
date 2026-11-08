@@ -3,6 +3,7 @@ import net from 'net';
 import {
   YEELIGHT_PROPS,
   YeelightCommand,
+  YeelightConnectionState,
   YeelightDeviceEvents,
   YeelightDeviceInfo,
   YeelightDeviceProps,
@@ -36,6 +37,10 @@ export class YeelightDevice extends EventEmitter {
   private pendingCommands: Map<number, PendingCommand> = new Map();
   private commandId = 0;
   private readonly commandTimeout: number;
+  private connectionState = YeelightConnectionState.DISCONNECTED;
+  private connectPromise: Promise<void> | null = null;
+  private connectResolve: (() => void) | null = null;
+  private connectReject: ((reason: any) => void) | null = null;
 
   constructor(state: YeelightDeviceInfo, options: YeelightDeviceOptions = {}) {
     super();
@@ -44,97 +49,161 @@ export class YeelightDevice extends EventEmitter {
     this.commandTimeout = options.commandTimeout ?? 5000;
   }
 
-  public connect(): void {
-    try {
-      this.socket = new net.Socket();
+  public connect(): Promise<void> {
+    if (this.connectionState === YeelightConnectionState.READY) {
+      return Promise.resolve();
+    }
 
-      this.socket.on('data', (data: Buffer) => {
-        this.responseBuffer = Buffer.concat([this.responseBuffer, data]);
+    if (this.connectPromise) {
+      return this.connectPromise;
+    }
 
-        let boundary = this.responseBuffer.indexOf('\r\n');
-        while (boundary !== -1) {
-          const frame = this.responseBuffer.slice(0, boundary).toString('utf8');
-          this.responseBuffer = this.responseBuffer.slice(boundary + 2);
+    this.connectionState = YeelightConnectionState.CONNECTING;
+    this.connectPromise = new Promise<void>((resolve, reject) => {
+      this.connectResolve = resolve;
+      this.connectReject = reject;
 
-          if (frame) {
-            try {
-              const response = JSON.parse(frame);
+      try {
+        const socket = new net.Socket();
+        this.socket = socket;
 
-              this.emit(YeelightDeviceEvents.DATA, response);
+        socket.on('data', (data: Buffer) => {
+          this.responseBuffer = Buffer.concat([this.responseBuffer, data]);
 
-              if (response.id !== undefined && response.id !== null && this.pendingCommands.has(response.id)) {
-                const pendingCommand = this.pendingCommands.get(response.id);
-                this.pendingCommands.delete(response.id);
-                if (pendingCommand) {
-                  clearTimeout(pendingCommand.timeout);
+          let boundary = this.responseBuffer.indexOf('\r\n');
+          while (boundary !== -1) {
+            const frame = this.responseBuffer.slice(0, boundary).toString('utf8');
+            this.responseBuffer = this.responseBuffer.slice(boundary + 2);
+
+            if (frame) {
+              try {
+                const response = JSON.parse(frame);
+
+                this.emit(YeelightDeviceEvents.DATA, response);
+
+                if (response.id !== undefined && response.id !== null && this.pendingCommands.has(response.id)) {
+                  const pendingCommand = this.pendingCommands.get(response.id);
+                  this.pendingCommands.delete(response.id);
+                  if (pendingCommand) {
+                    clearTimeout(pendingCommand.timeout);
+                  }
+
+                  if (response.error) {
+                    pendingCommand?.reject(new YeelightProtocolError(response.id, response.error));
+                  } else {
+                    pendingCommand?.resolve(response.result);
+                  }
                 }
 
-                if (response.error) {
-                  pendingCommand?.reject(new YeelightProtocolError(response.id, response.error));
-                } else {
-                  pendingCommand?.resolve(response.result);
+                if (response?.method === 'props') {
+                  this.onPropsChange(response.params);
                 }
+              } catch (error) {
+                this.emit(YeelightDeviceEvents.ERROR, error);
+                this.finalizeDisconnect(error instanceof Error ? error : undefined);
+                return;
               }
-
-              if (response?.method === 'props') {
-                this.onPropsChange(response.params);
-              }
-            } catch (error) {
-              this.emit(YeelightDeviceEvents.ERROR, error);
-              this.disconnect();
-              return;
             }
+
+            boundary = this.responseBuffer.indexOf('\r\n');
           }
+        });
 
-          boundary = this.responseBuffer.indexOf('\r\n');
-        }
-      });
+        socket.on('error', (error: Error) => {
+          this.emit(YeelightDeviceEvents.ERROR, error);
+          this.finalizeDisconnect(error);
+        });
 
-      this.socket.on('error', (error: any) => {
-        this.emit(YeelightDeviceEvents.ERROR, error);
-        this.disconnect(error);
-      });
+        socket.on('end', () => {
+          this.finalizeDisconnect();
+        });
 
-      this.socket.on('end', () => {
-        this.disconnect();
-      });
+        socket.connect({ host: this.device.host, port: this.device.port }, async () => {
+          try {
+            const response = await this.command({
+              method: YeelightMethod.GET_PROP,
+              params: YEELIGHT_PROPS,
+            });
 
-      this.socket.connect({ host: this.device.host, port: this.device.port }, () => {
-        setTimeout(() => {
-          this.command({
-            method: YeelightMethod.GET_PROP,
-            params: YEELIGHT_PROPS,
-          }).then((response) => {
             YEELIGHT_PROPS.forEach((prop, index) => {
               this.props[prop] = response[index];
             });
 
+            this.connectionState = YeelightConnectionState.READY;
+            const completeConnection = this.connectResolve;
+            this.connectPromise = null;
+            this.connectResolve = null;
+            this.connectReject = null;
             this.emit(YeelightDeviceEvents.CONNECT);
-          });
-        }, 20);
-      });
-    } catch (error) {
-      this.disconnect(error);
+            completeConnection?.();
+          } catch (error) {
+            this.finalizeDisconnect(error instanceof Error ? error : undefined);
+          }
+        });
+      } catch (error) {
+        this.finalizeDisconnect(error instanceof Error ? error : undefined);
+      }
+    });
+
+    return this.connectPromise;
+  }
+
+  public close(error?: Error): Promise<void> {
+    if (this.connectionState === YeelightConnectionState.DISCONNECTED && !this.socket) {
+      return Promise.resolve();
     }
+
+    this.connectionState = YeelightConnectionState.CLOSING;
+    this.finalizeDisconnect(error);
+
+    return Promise.resolve();
   }
 
   public disconnect = (error?: any): void => {
-    this.socket?.destroy();
+    void this.close(error instanceof Error ? error : undefined);
+  };
+
+  public isConnected(): boolean {
+    return this.connectionState === YeelightConnectionState.READY;
+  }
+
+  public getConnectionState(): YeelightConnectionState {
+    return this.connectionState;
+  }
+
+  private finalizeDisconnect(error?: Error): void {
+    const wasActive =
+      this.connectionState !== YeelightConnectionState.DISCONNECTED ||
+      this.socket !== null ||
+      this.connectPromise !== null ||
+      this.pendingCommands.size > 0;
+
+    if (!wasActive) {
+      return;
+    }
+
+    const socket = this.socket;
     this.socket = null;
+    socket?.removeAllListeners();
+    socket?.destroy();
     this.responseBuffer = Buffer.alloc(0);
 
-    const connectionError =
-      error instanceof YeelightConnectionClosedError
-        ? error
-        : new YeelightConnectionClosedError(error instanceof Error ? error : undefined);
+    const connectionError = new YeelightConnectionClosedError(error);
     this.pendingCommands.forEach((pendingCommand) => {
       clearTimeout(pendingCommand.timeout);
       pendingCommand.reject(connectionError);
     });
     this.pendingCommands.clear();
 
+    const rejectConnection = this.connectReject;
+    this.connectPromise = null;
+    this.connectResolve = null;
+    this.connectReject = null;
+    this.connectionState = YeelightConnectionState.DISCONNECTED;
+    rejectConnection?.(error ?? connectionError);
+
     this.emit(YeelightDeviceEvents.DISCONNECT, error);
-  };
+  }
 
   public command(command: YeelightCommand): Promise<any> {
     if (this.device.support && !this.device.support.includes(command.method)) {

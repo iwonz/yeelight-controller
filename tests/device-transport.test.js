@@ -6,6 +6,7 @@ const {
   YeelightDevice,
   YeelightDeviceEvents,
   YeelightCommandTimeoutError,
+  YeelightConnectionState,
   YeelightConnectionClosedError,
   YeelightDuplicateCommandIdError,
   YeelightMethod,
@@ -58,9 +59,7 @@ test('parses a response split across TCP chunks', async (t) => {
   });
   t.after(() => fixture.close());
 
-  const result = await withTimeout(
-    fixture.device.command({ method: YeelightMethod.TOGGLE, params: [] }),
-  );
+  const result = await withTimeout(fixture.device.command({ method: YeelightMethod.TOGGLE, params: [] }));
 
   assert.deepEqual(result, ['ok']);
 });
@@ -70,11 +69,7 @@ test('parses multiple responses in one TCP chunk', async (t) => {
   const fixture = await connectDevice((command, socket) => {
     pending.push(command);
     if (pending.length === 2) {
-      socket.write(
-        pending
-          .map((item) => JSON.stringify({ id: item.id, result: ['ok'] }))
-          .join('\r\n') + '\r\n',
-      );
+      socket.write(pending.map((item) => JSON.stringify({ id: item.id, result: ['ok'] })).join('\r\n') + '\r\n');
     }
   });
   t.after(() => fixture.close());
@@ -98,44 +93,35 @@ test('rejects command promises with device error details', async (t) => {
   });
   t.after(() => fixture.close());
 
-  await assert.rejects(
-    withTimeout(fixture.device.command({ method: YeelightMethod.TOGGLE, params: [] })),
-    (error) => {
-      assert.ok(error instanceof YeelightProtocolError);
-      assert.equal(error.code, -1);
-      assert.equal(error.message, 'unsupported method');
-      assert.equal(error.commandId, 2);
-      return true;
-    },
-  );
+  await assert.rejects(withTimeout(fixture.device.command({ method: YeelightMethod.TOGGLE, params: [] })), (error) => {
+    assert.ok(error instanceof YeelightProtocolError);
+    assert.equal(error.code, -1);
+    assert.equal(error.message, 'unsupported method');
+    assert.equal(error.commandId, 2);
+    return true;
+  });
 });
 
 test('rejects commands issued before the socket is connected', async () => {
   const device = new YeelightDevice({ host: '127.0.0.1', port: 55443 });
 
-  await assert.rejects(
-    withTimeout(device.command({ method: YeelightMethod.TOGGLE, params: [] })),
-    (error) => {
-      assert.ok(error instanceof YeelightNotConnectedError);
-      return true;
-    },
-  );
+  await assert.rejects(withTimeout(device.command({ method: YeelightMethod.TOGGLE, params: [] })), (error) => {
+    assert.ok(error instanceof YeelightNotConnectedError);
+    return true;
+  });
 });
 
 test('rejects commands that exceed their response timeout', async (t) => {
   const fixture = await connectDevice(() => undefined, { commandTimeout: 25 });
   t.after(() => fixture.close());
 
-  await assert.rejects(
-    withTimeout(fixture.device.command({ method: YeelightMethod.TOGGLE, params: [] })),
-    (error) => {
-      assert.ok(error instanceof YeelightCommandTimeoutError);
-      assert.equal(error.commandId, 2);
-      assert.equal(error.method, YeelightMethod.TOGGLE);
-      assert.equal(error.timeout, 25);
-      return true;
-    },
-  );
+  await assert.rejects(withTimeout(fixture.device.command({ method: YeelightMethod.TOGGLE, params: [] })), (error) => {
+    assert.ok(error instanceof YeelightCommandTimeoutError);
+    assert.equal(error.commandId, 2);
+    assert.equal(error.method, YeelightMethod.TOGGLE);
+    assert.equal(error.timeout, 25);
+    return true;
+  });
 });
 
 test('rejects pending commands when the connection closes', async (t) => {
@@ -159,15 +145,16 @@ test('rejects pending commands when the connection closes', async (t) => {
 
 test('preserves command id zero when correlating a response', async (t) => {
   let receivedId;
-  const fixture = await connectDevice((command, socket) => {
-    receivedId = command.id;
-    sendMessage(socket, { id: command.id, result: ['ok'] });
-  }, { commandTimeout: 30 });
+  const fixture = await connectDevice(
+    (command, socket) => {
+      receivedId = command.id;
+      sendMessage(socket, { id: command.id, result: ['ok'] });
+    },
+    { commandTimeout: 30 },
+  );
   t.after(() => fixture.close());
 
-  const result = await withTimeout(
-    fixture.device.command({ id: 0, method: YeelightMethod.TOGGLE, params: [] }),
-  );
+  const result = await withTimeout(fixture.device.command({ id: 0, method: YeelightMethod.TOGGLE, params: [] }));
 
   assert.equal(receivedId, 0);
   assert.deepEqual(result, ['ok']);
@@ -175,10 +162,13 @@ test('preserves command id zero when correlating a response', async (t) => {
 
 test('replaces an explicitly undefined command id', async (t) => {
   let receivedId;
-  const fixture = await connectDevice((command, socket) => {
-    receivedId = command.id;
-    sendMessage(socket, { id: command.id, result: ['ok'] });
-  }, { commandTimeout: 30 });
+  const fixture = await connectDevice(
+    (command, socket) => {
+      receivedId = command.id;
+      sendMessage(socket, { id: command.id, result: ['ok'] });
+    },
+    { commandTimeout: 30 },
+  );
   t.after(() => fixture.close());
 
   const result = await withTimeout(
@@ -195,10 +185,13 @@ test('rejects duplicate active command ids without replacing the first command',
   const firstReceived = new Promise((resolve) => {
     receivedFirst = resolve;
   });
-  const fixture = await connectDevice((command, socket) => {
-    firstSocket = socket;
-    receivedFirst();
-  }, { commandTimeout: 100 });
+  const fixture = await connectDevice(
+    (command, socket) => {
+      firstSocket = socket;
+      receivedFirst();
+    },
+    { commandTimeout: 100 },
+  );
   t.after(() => fixture.close());
 
   const first = fixture.device.command({ id: 99, method: YeelightMethod.TOGGLE, params: [] });
@@ -213,4 +206,71 @@ test('rejects duplicate active command ids without replacing the first command',
 
   sendMessage(firstSocket, { id: 99, result: ['ok'] });
   assert.deepEqual(await withTimeout(first), ['ok']);
+});
+
+test('connect resolves only after initial properties are loaded', async (t) => {
+  const server = await createFakeYeelight((command, socket) => {
+    sendMessage(socket, { id: command.id, result: command.params.map(() => '') });
+  });
+  const device = new YeelightDevice({ host: server.host, port: server.port });
+  t.after(async () => {
+    await device.close();
+    await server.close();
+  });
+
+  const connecting = device.connect();
+  assert.ok(connecting instanceof Promise);
+  assert.equal(device.getConnectionState(), YeelightConnectionState.CONNECTING);
+
+  await withTimeout(connecting);
+
+  assert.equal(device.getConnectionState(), YeelightConnectionState.READY);
+  assert.equal(device.isConnected(), true);
+});
+
+test('reuses the in-flight promise for duplicate connect calls', async (t) => {
+  const server = await createFakeYeelight((command, socket) => {
+    setTimeout(() => {
+      sendMessage(socket, { id: command.id, result: command.params.map(() => '') });
+    }, 10);
+  });
+  const device = new YeelightDevice({ host: server.host, port: server.port });
+  t.after(async () => {
+    await device.close();
+    await server.close();
+  });
+
+  const first = device.connect();
+  const second = device.connect();
+
+  assert.equal(first, second);
+  await withTimeout(first);
+  assert.equal(server.commands.filter((command) => command.method === YeelightMethod.GET_PROP).length, 1);
+});
+
+test('rejects connect when initial property loading fails', async (t) => {
+  const server = await createFakeYeelight((command, socket) => {
+    sendMessage(socket, {
+      id: command.id,
+      error: { code: -2, message: 'initialization failed' },
+    });
+  });
+  const device = new YeelightDevice({ host: server.host, port: server.port });
+  t.after(async () => {
+    await device.close();
+    await server.close();
+  });
+
+  await assert.rejects(withTimeout(device.connect()), YeelightProtocolError);
+  assert.equal(device.getConnectionState(), YeelightConnectionState.DISCONNECTED);
+});
+
+test('close is idempotent and leaves the device disconnected', async (t) => {
+  const fixture = await connectDevice(() => undefined);
+  t.after(() => fixture.server.close());
+
+  await Promise.all([fixture.device.close(), fixture.device.close()]);
+
+  assert.equal(fixture.device.getConnectionState(), YeelightConnectionState.DISCONNECTED);
+  assert.equal(fixture.device.isConnected(), false);
 });

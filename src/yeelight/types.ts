@@ -16,6 +16,13 @@ export enum YeelightDeviceEvents {
   ERROR = 'ERROR',
 }
 
+export enum YeelightConnectionState {
+  DISCONNECTED = 'disconnected',
+  CONNECTING = 'connecting',
+  READY = 'ready',
+  CLOSING = 'closing',
+}
+
 export enum YeelightPower {
   ON = 'on',
   OFF = 'off',
