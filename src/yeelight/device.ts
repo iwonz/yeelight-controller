@@ -16,6 +16,7 @@ import {
   YeelightNotConnectedError,
   YeelightProtocolError,
 } from './errors';
+import { CommandRateLimiter } from './rate-limiter';
 
 interface PendingCommand {
   resolve: (value: any) => void;
@@ -26,6 +27,8 @@ interface PendingCommand {
 export interface YeelightDeviceOptions {
   commandTimeout?: number;
   initialProps?: YeelightDeviceProps;
+  maxCommandsPerWindow?: number;
+  rateLimitWindow?: number;
 }
 
 export class YeelightDevice extends EventEmitter {
@@ -43,6 +46,7 @@ export class YeelightDevice extends EventEmitter {
   private connectResolve: (() => void) | null = null;
   private connectReject: ((reason: any) => void) | null = null;
   private lastSeen = Date.now();
+  private readonly rateLimiter: CommandRateLimiter;
 
   constructor(state: YeelightDeviceInfo, options: YeelightDeviceOptions = {}) {
     super();
@@ -50,6 +54,7 @@ export class YeelightDevice extends EventEmitter {
     this.device = state;
     this.props = { ...options.initialProps };
     this.commandTimeout = options.commandTimeout ?? 5000;
+    this.rateLimiter = new CommandRateLimiter(options.maxCommandsPerWindow ?? 60, options.rateLimitWindow ?? 60000);
   }
 
   public connect(): Promise<void> {
@@ -192,6 +197,7 @@ export class YeelightDevice extends EventEmitter {
     this.responseBuffer = Buffer.alloc(0);
 
     const connectionError = new YeelightConnectionClosedError(error);
+    this.rateLimiter.cancel(connectionError);
     this.pendingCommands.forEach((pendingCommand) => {
       clearTimeout(pendingCommand.timeout);
       pendingCommand.reject(connectionError);
@@ -208,17 +214,24 @@ export class YeelightDevice extends EventEmitter {
     this.emit(YeelightDeviceEvents.DISCONNECT, error);
   }
 
-  public command(command: YeelightCommand): Promise<any> {
+  public async command(command: YeelightCommand): Promise<any> {
     if (this.device.support && !this.device.support.includes(command.method)) {
       return Promise.reject(
         `Method ${command.method} does not support by device. Allowed only: ${this.device.support.join(', ')}`,
       );
     }
 
-    const socket = this.socket;
+    let socket = this.socket;
     if (!socket || socket.destroyed || !socket.writable) {
-      return Promise.reject(new YeelightNotConnectedError());
+      throw new YeelightNotConnectedError();
     }
+    await this.rateLimiter.acquire();
+
+    socket = this.socket;
+    if (!socket || socket.destroyed || !socket.writable) {
+      throw new YeelightNotConnectedError();
+    }
+    const writableSocket = socket;
 
     const id = command.id ?? this.processCommandId();
     if (this.pendingCommands.has(id)) {
@@ -235,7 +248,7 @@ export class YeelightDevice extends EventEmitter {
       this.pendingCommands.set(id, { resolve, reject, timeout });
 
       try {
-        socket.write(
+        writableSocket.write(
           JSON.stringify({
             ...command,
             id,
@@ -278,6 +291,10 @@ export class YeelightDevice extends EventEmitter {
     if (changed) {
       this.emit(YeelightDeviceEvents.PROPS_CHANGE, { ...this.props });
     }
+  }
+
+  protected setCommandRateLimitBypassed(bypassed: boolean): void {
+    this.rateLimiter.setBypassed(bypassed);
   }
 
   private processCommandId(): number {

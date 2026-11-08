@@ -313,16 +313,18 @@ export class YeelightDeviceController extends YeelightDevice {
     return this.setMusic(YeelightMusicAction.TURN_OFF);
   }
 
-  public setMusic(action: YeelightMusicAction, host?: string, port?: number): Promise<YeelightResponseSuccess> {
+  public async setMusic(action: YeelightMusicAction, host?: string, port?: number): Promise<YeelightResponseSuccess> {
     requireProtocolInteger(action, 'action', 0, 1);
     if (action === YeelightMusicAction.TURN_ON) {
       host = requireNonEmptyString(host, 'host');
       port = requireProtocolInteger(Number(port), 'port', 1, 65535);
     }
-    return super.command({
+    const result = await super.command({
       method: YeelightMethod.SET_MUSIC,
       params: action === YeelightMusicAction.TURN_OFF ? [action] : [action, host, port],
     });
+    this.setCommandRateLimitBypassed(action === YeelightMusicAction.TURN_ON);
+    return result;
   }
 
   public setName(name: string): Promise<YeelightResponseSuccess> {

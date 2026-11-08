@@ -274,3 +274,38 @@ test('close is idempotent and leaves the device disconnected', async (t) => {
   assert.equal(fixture.device.getConnectionState(), YeelightConnectionState.DISCONNECTED);
   assert.equal(fixture.device.isConnected(), false);
 });
+
+test('queues commands that exceed the configured rate window', async (t) => {
+  const receivedAt = [];
+  const fixture = await connectDevice(
+    (command, socket) => {
+      receivedAt.push(Date.now());
+      sendMessage(socket, { id: command.id, result: ['ok'] });
+    },
+    { maxCommandsPerWindow: 2, rateLimitWindow: 50 },
+  );
+  t.after(() => fixture.close());
+
+  await Promise.all([
+    fixture.device.command({ method: YeelightMethod.TOGGLE, params: [] }),
+    fixture.device.command({ method: YeelightMethod.TOGGLE, params: [] }),
+  ]);
+
+  assert.equal(receivedAt.length, 2);
+  assert.ok(receivedAt[1] - receivedAt[0] >= 30);
+});
+
+test('close rejects commands waiting in the rate-limit queue', async (t) => {
+  const fixture = await connectDevice(() => undefined, {
+    maxCommandsPerWindow: 1,
+    rateLimitWindow: 1000,
+  });
+  t.after(() => fixture.server.close());
+
+  const queued = fixture.device.command({ method: YeelightMethod.TOGGLE, params: [] });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  await fixture.device.close();
+
+  await assert.rejects(queued, YeelightConnectionClosedError);
+  assert.equal(fixture.server.commands.filter((command) => command.method === YeelightMethod.TOGGLE).length, 0);
+});

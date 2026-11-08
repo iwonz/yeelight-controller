@@ -1,15 +1,10 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const {
-  YeelightDeviceController,
-  YeelightMethod,
-  YeelightMusicAction,
-  YeelightProps,
-} = require('../dist/cjs');
+const { YeelightDeviceController, YeelightMethod, YeelightMusicAction, YeelightProps } = require('../dist/cjs');
 const { createFakeYeelight, sendMessage } = require('./support/fake-yeelight');
 
-const connectController = async (onCommand) => {
+const connectController = async (onCommand, options) => {
   let initialized = false;
   const server = await createFakeYeelight((command, socket) => {
     if (!initialized && command.method === YeelightMethod.GET_PROP) {
@@ -21,7 +16,7 @@ const connectController = async (onCommand) => {
     const result = onCommand(command) ?? ['ok'];
     sendMessage(socket, { id: command.id, result });
   });
-  const device = new YeelightDeviceController({ host: server.host, port: server.port });
+  const device = new YeelightDeviceController({ host: server.host, port: server.port }, options);
   await device.connect();
 
   return {
@@ -73,9 +68,28 @@ test('serializes music mode enable and disable with action-specific parameters',
   await fixture.device.disableMusic();
   await fixture.device.setMusic(YeelightMusicAction.TURN_OFF);
 
-  assert.deepEqual(commands.map((command) => command.params), [
-    [1, '192.168.1.50', 54321],
-    [0],
-    [0],
-  ]);
+  assert.deepEqual(
+    commands.map((command) => command.params),
+    [[1, '192.168.1.50', 54321], [0], [0]],
+  );
+});
+
+test('music mode bypasses the normal command quota', async (t) => {
+  const receivedAt = [];
+  const fixture = await connectController(
+    (command) => {
+      receivedAt.push({ method: command.method, time: Date.now() });
+      return undefined;
+    },
+    { maxCommandsPerWindow: 2, rateLimitWindow: 100 },
+  );
+  t.after(() => fixture.close());
+
+  await fixture.device.enableMusic('192.168.1.50', 54321);
+  await Promise.all([fixture.device.toggle(), fixture.device.toggle(), fixture.device.toggle()]);
+  await fixture.device.disableMusic();
+
+  const toggles = receivedAt.filter((entry) => entry.method === YeelightMethod.TOGGLE);
+  assert.equal(toggles.length, 3);
+  assert.ok(toggles.at(-1).time - toggles[0].time < 50);
 });
