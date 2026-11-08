@@ -2,11 +2,7 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const test = require('node:test');
 
-const {
-  parseYeelightDiscoveryMessage,
-  YeelightDiscovery,
-  YeelightProps,
-} = require('../dist/cjs');
+const { parseYeelightDiscoveryMessage, YeelightDiscovery, YeelightProps } = require('../dist/cjs');
 
 const advertisement = (brightness, location = 'yeelight://10.0.0.8:55443') =>
   Buffer.from(

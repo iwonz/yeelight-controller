@@ -1,6 +1,6 @@
 import { clamp } from '../utils';
 import { YeelightValidationError } from './errors';
-import { YeelightFlowExpression, YeelightFlowExpressionMode } from './types';
+import { type YeelightFlowExpression, YeelightFlowExpressionMode } from './types';
 
 export const requireProtocolInteger = (
   value: number,

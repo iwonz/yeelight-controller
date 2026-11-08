@@ -5,7 +5,7 @@ import {
   YeelightDiscoveryEvents,
   YeelightMethod,
   YeelightProps,
-  YeelightResponseSuccess,
+  type YeelightResponseSuccess,
 } from '../src';
 
 const device = new YeelightDevice({ host: '127.0.0.1', port: 55443 });

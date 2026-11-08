@@ -42,13 +42,7 @@ test('parses discovery headers case-insensitively and without required whitespac
 
 test('accepts valid alive advertisement messages', () => {
   const message = parseYeelightDiscoveryMessage(
-    [
-      'NOTIFY * HTTP/1.1',
-      'NTS: ssdp:alive',
-      'id: device-id',
-      'Location: yeelight://10.0.0.8:55443',
-      '',
-    ].join('\r\n'),
+    ['NOTIFY * HTTP/1.1', 'NTS: ssdp:alive', 'id: device-id', 'Location: yeelight://10.0.0.8:55443', ''].join('\r\n'),
   );
 
   assert.equal(message.kind, 'advertisement');

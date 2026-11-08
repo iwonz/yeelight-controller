@@ -185,10 +185,10 @@ export type YeelightResponseSuccess = ['ok'];
 export type YeelightCommandResult<M extends string> = M extends YeelightMethod.GET_PROP
   ? string[]
   : M extends YeelightMethod.CRON_GET
-  ? YeelightCron[]
-  : M extends YeelightMethod
-  ? YeelightResponseSuccess
-  : unknown;
+    ? YeelightCron[]
+    : M extends YeelightMethod
+      ? YeelightResponseSuccess
+      : unknown;
 
 export interface YeelightResultMessage {
   id: number;

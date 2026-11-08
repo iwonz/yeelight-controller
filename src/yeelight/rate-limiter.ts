@@ -35,7 +35,9 @@ export class CommandRateLimiter {
     this.timestamps = [];
     const queue = this.queue;
     this.queue = [];
-    queue.forEach((permit) => permit.reject(error));
+    queue.forEach((permit) => {
+      permit.reject(error);
+    });
   }
 
   public setBypassed(bypassed: boolean): void {
@@ -50,7 +52,9 @@ export class CommandRateLimiter {
     }
     const queue = this.queue;
     this.queue = [];
-    queue.forEach((permit) => permit.resolve());
+    queue.forEach((permit) => {
+      permit.resolve();
+    });
   }
 
   private drain(): void {

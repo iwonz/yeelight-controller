@@ -1,16 +1,16 @@
-import EventEmitter from 'events';
-import dgram from 'dgram';
-import {
-  YeelightCommand,
-  YeelightCommandResult,
-  YeelightDeviceEvents,
-  YeelightDeviceProps,
-  YeelightDiscoveryEvents,
-  YeelightIncomingMessage,
-} from './types';
+import dgram from 'node:dgram';
+import EventEmitter from 'node:events';
 import { YeelightDeviceController } from './device-controller';
+import type { YeelightDeviceOptions } from './device-transport';
 import { parseYeelightDiscoveryMessage } from './discovery-message';
-import { YeelightDeviceOptions } from './device-transport';
+import {
+  type YeelightCommand,
+  type YeelightCommandResult,
+  YeelightDeviceEvents,
+  type YeelightDeviceProps,
+  YeelightDiscoveryEvents,
+  type YeelightIncomingMessage,
+} from './types';
 
 type EventListener = Parameters<EventEmitter['on']>[1];
 

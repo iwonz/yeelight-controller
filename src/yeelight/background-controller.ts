@@ -1,14 +1,14 @@
 import type { YeelightDevice } from './device-controller';
 import {
-  YeelightAdjustAction,
-  YeelightAdjustProp,
-  YeelightColorFlowAction,
-  YeelightEffect,
-  YeelightFlowExpression,
-  YeelightPower,
+  type YeelightAdjustAction,
+  type YeelightAdjustProp,
+  type YeelightColorFlowAction,
+  type YeelightEffect,
+  type YeelightFlowExpression,
+  type YeelightPower,
   YeelightPowerMode,
-  YeelightResponseSuccess,
-  YeelightSceneClass,
+  type YeelightResponseSuccess,
+  type YeelightSceneClass,
 } from './types';
 
 export class YeelightBackgroundController {

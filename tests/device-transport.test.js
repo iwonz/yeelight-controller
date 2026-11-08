@@ -69,7 +69,7 @@ test('parses multiple responses in one TCP chunk', async (t) => {
   const fixture = await connectDevice((command, socket) => {
     pending.push(command);
     if (pending.length === 2) {
-      socket.write(pending.map((item) => JSON.stringify({ id: item.id, result: ['ok'] })).join('\r\n') + '\r\n');
+      socket.write(`${pending.map((item) => JSON.stringify({ id: item.id, result: ['ok'] })).join('\r\n')}\r\n`);
     }
   });
   t.after(() => fixture.close());
@@ -186,7 +186,7 @@ test('rejects duplicate active command ids without replacing the first command',
     receivedFirst = resolve;
   });
   const fixture = await connectDevice(
-    (command, socket) => {
+    (_command, socket) => {
       firstSocket = socket;
       receivedFirst();
     },

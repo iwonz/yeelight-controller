@@ -1,17 +1,5 @@
-import EventEmitter from 'events';
-import net from 'net';
-import {
-  YEELIGHT_PROPS,
-  YeelightCommand,
-  YeelightCommandResult,
-  YeelightConnectionState,
-  YeelightDeviceEventMap,
-  YeelightDeviceEvents,
-  YeelightDeviceInfo,
-  YeelightDeviceProps,
-  YeelightIncomingMessage,
-  YeelightMethod,
-} from './types';
+import EventEmitter from 'node:events';
+import net from 'node:net';
 import {
   YeelightCommandTimeoutError,
   YeelightConnectionClosedError,
@@ -20,6 +8,18 @@ import {
   YeelightProtocolError,
 } from './errors';
 import { CommandRateLimiter } from './rate-limiter';
+import {
+  YEELIGHT_PROPS,
+  type YeelightCommand,
+  type YeelightCommandResult,
+  YeelightConnectionState,
+  type YeelightDeviceEventMap,
+  YeelightDeviceEvents,
+  type YeelightDeviceInfo,
+  type YeelightDeviceProps,
+  type YeelightIncomingMessage,
+  YeelightMethod,
+} from './types';
 import { requireProtocolInteger } from './validation';
 
 type EventListener = Parameters<EventEmitter['on']>[1];
@@ -309,10 +309,10 @@ export class YeelightDeviceTransport extends EventEmitter {
 
       try {
         writableSocket.write(
-          JSON.stringify({
+          `${JSON.stringify({
             ...command,
             id,
-          }) + '\r\n',
+          })}\r\n`,
         );
       } catch (error) {
         clearTimeout(timeout);

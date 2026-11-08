@@ -1,20 +1,22 @@
-import { YeelightDeviceOptions, YeelightDeviceTransport } from './device-transport';
+import { YeelightBackgroundController } from './background-controller';
+import { type YeelightDeviceOptions, YeelightDeviceTransport } from './device-transport';
+import { YeelightValidationError } from './errors';
 import {
   YeelightAdjustAction,
   YeelightAdjustProp,
-  YeelightColorFlowAction,
-  YeelightCron,
-  YeelightCronType,
-  YeelightDeviceInfo,
-  YeelightDeviceProps,
-  YeelightEffect,
-  YeelightFlowExpression,
+  type YeelightColorFlowAction,
+  type YeelightCron,
+  type YeelightCronType,
+  type YeelightDeviceInfo,
+  type YeelightDeviceProps,
+  type YeelightEffect,
+  type YeelightFlowExpression,
   YeelightMethod,
   YeelightMusicAction,
-  YeelightPower,
+  type YeelightPower,
   YeelightPowerMode,
-  YeelightProps,
-  YeelightResponseSuccess,
+  type YeelightProps,
+  type YeelightResponseSuccess,
   YeelightSceneClass,
 } from './types';
 import {
@@ -24,8 +26,6 @@ import {
   requireProtocolInteger,
   validateFlowExpression,
 } from './validation';
-import { YeelightValidationError } from './errors';
-import { YeelightBackgroundController } from './background-controller';
 
 export class YeelightDevice extends YeelightDeviceTransport {
   public readonly background: YeelightBackgroundController;

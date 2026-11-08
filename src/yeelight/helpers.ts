@@ -1,4 +1,4 @@
-import { YeelightFlowExpression, YeelightFlowExpressionMode } from './types';
+import { type YeelightFlowExpression, YeelightFlowExpressionMode } from './types';
 import { clampProtocolInteger } from './validation';
 
 export const getFlowExpression = (

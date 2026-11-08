@@ -1,5 +1,5 @@
-import { URL } from 'url';
-import { YEELIGHT_PROPS, YeelightDeviceProps } from './types';
+import { URL } from 'node:url';
+import { YEELIGHT_PROPS, type YeelightDeviceProps } from './types';
 
 export interface YeelightDiscoveryMessage {
   kind: 'response' | 'advertisement';

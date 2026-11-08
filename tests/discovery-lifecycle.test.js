@@ -70,7 +70,10 @@ test('discovery creates a fresh UDP socket when reactivated', async () => {
   await discovery.deactivate();
 
   assert.equal(sockets.length, 2);
-  assert.equal(sockets.every((socket) => socket.closed), true);
+  assert.equal(
+    sockets.every((socket) => socket.closed),
+    true,
+  );
 });
 
 test('deactivate closes managed devices and clears the registry', async () => {
