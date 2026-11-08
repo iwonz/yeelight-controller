@@ -24,7 +24,15 @@ export class YeelightDeviceController extends YeelightDevice {
     super(state, options);
   }
 
-  public getProps(props: YeelightProps[]): Promise<YeelightDeviceProps> {
+  public async getProps(props: YeelightProps[]): Promise<YeelightDeviceProps> {
+    const values = await this.getPropValues(props);
+    return props.reduce<YeelightDeviceProps>((result, prop, index) => {
+      result[prop] = values[index];
+      return result;
+    }, {});
+  }
+
+  public getPropValues(props: YeelightProps[]): Promise<string[]> {
     return super.command({
       method: YeelightMethod.GET_PROP,
       params: props,
