@@ -48,3 +48,14 @@ test('rejects invalid music endpoints and names longer than 64 bytes', async () 
   await rejectsValidation(() => device.enableMusic('192.168.1.50', 70000), 'port');
   await rejectsValidation(() => device.setName('😀'.repeat(17)), 'name');
 });
+
+test('rejects non-positive command quota options', async () => {
+  await rejectsValidation(
+    () => new YeelightDeviceController({ host: '127.0.0.1', port: 55443 }, { maxCommandsPerWindow: 0 }),
+    'maxCommandsPerWindow',
+  );
+  await rejectsValidation(
+    () => new YeelightDeviceController({ host: '127.0.0.1', port: 55443 }, { rateLimitWindow: 0 }),
+    'rateLimitWindow',
+  );
+});

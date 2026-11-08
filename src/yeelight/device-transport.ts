@@ -20,6 +20,7 @@ import {
   YeelightProtocolError,
 } from './errors';
 import { CommandRateLimiter } from './rate-limiter';
+import { requireProtocolInteger } from './validation';
 
 type EventListener = Parameters<EventEmitter['on']>[1];
 
@@ -96,8 +97,10 @@ export class YeelightDeviceTransport extends EventEmitter {
 
     this.device = state;
     this.props = { ...options.initialProps };
-    this.commandTimeout = options.commandTimeout ?? 5000;
-    this.rateLimiter = new CommandRateLimiter(options.maxCommandsPerWindow ?? 60, options.rateLimitWindow ?? 60000);
+    this.commandTimeout = requireProtocolInteger(options.commandTimeout ?? 5000, 'commandTimeout', 1);
+    const maxCommands = requireProtocolInteger(options.maxCommandsPerWindow ?? 60, 'maxCommandsPerWindow', 1);
+    const rateLimitWindow = requireProtocolInteger(options.rateLimitWindow ?? 60000, 'rateLimitWindow', 1);
+    this.rateLimiter = new CommandRateLimiter(maxCommands, rateLimitWindow);
   }
 
   public on<E extends YeelightDeviceEvents>(event: E, listener: (...args: YeelightDeviceEventMap[E]) => void): this {
@@ -118,94 +121,99 @@ export class YeelightDeviceTransport extends EventEmitter {
     }
 
     this.connectionState = YeelightConnectionState.CONNECTING;
-    this.connectPromise = new Promise<void>((resolve, reject) => {
-      this.connectResolve = resolve;
-      this.connectReject = reject;
-
-      try {
-        const socket = new net.Socket();
-        this.socket = socket;
-
-        socket.on('data', (data: Buffer) => {
-          this.responseBuffer = Buffer.concat([this.responseBuffer, data]);
-
-          let boundary = this.responseBuffer.indexOf('\r\n');
-          while (boundary !== -1) {
-            const frame = this.responseBuffer.slice(0, boundary).toString('utf8');
-            this.responseBuffer = this.responseBuffer.slice(boundary + 2);
-
-            if (frame) {
-              try {
-                const response = parseIncomingMessage(frame);
-
-                this.emit(YeelightDeviceEvents.DATA, response);
-
-                if ('id' in response && this.pendingCommands.has(response.id)) {
-                  const pendingCommand = this.pendingCommands.get(response.id);
-                  this.pendingCommands.delete(response.id);
-                  if (pendingCommand) {
-                    clearTimeout(pendingCommand.timeout);
-                  }
-
-                  if ('error' in response) {
-                    pendingCommand?.reject(new YeelightProtocolError(response.id, response.error));
-                  } else {
-                    pendingCommand?.resolve(response.result);
-                  }
-                }
-
-                if ('method' in response && response.method === 'props') {
-                  this.onPropsChange(response.params);
-                }
-              } catch (error) {
-                const parseError = toError(error);
-                this.emit(YeelightDeviceEvents.ERROR, parseError);
-                this.finalizeDisconnect(parseError);
-                return;
-              }
-            }
-
-            boundary = this.responseBuffer.indexOf('\r\n');
-          }
-        });
-
-        socket.on('error', (error: Error) => {
-          this.emit(YeelightDeviceEvents.ERROR, error);
-          this.finalizeDisconnect(error);
-        });
-
-        socket.on('end', () => {
-          this.finalizeDisconnect();
-        });
-
-        socket.connect({ host: this.device.host, port: this.device.port }, async () => {
-          try {
-            const response = await this.command({
-              method: YeelightMethod.GET_PROP,
-              params: YEELIGHT_PROPS,
-            });
-
-            YEELIGHT_PROPS.forEach((prop, index) => {
-              this.props[prop] = response[index];
-            });
-
-            this.connectionState = YeelightConnectionState.READY;
-            const completeConnection = this.connectResolve;
-            this.connectPromise = null;
-            this.connectResolve = null;
-            this.connectReject = null;
-            this.emit(YeelightDeviceEvents.CONNECT);
-            completeConnection?.();
-          } catch (error) {
-            this.finalizeDisconnect(toError(error));
-          }
-        });
-      } catch (error) {
-        this.finalizeDisconnect(toError(error));
-      }
+    let resolveConnection: () => void = () => undefined;
+    let rejectConnection: (reason: unknown) => void = () => undefined;
+    const connectPromise = new Promise<void>((resolve, reject) => {
+      resolveConnection = resolve;
+      rejectConnection = reject;
     });
+    this.connectPromise = connectPromise;
+    this.connectResolve = resolveConnection;
+    this.connectReject = rejectConnection;
 
-    return this.connectPromise;
+    try {
+      const socket = new net.Socket();
+      this.socket = socket;
+
+      socket.on('data', (data: Buffer) => {
+        this.responseBuffer = Buffer.concat([this.responseBuffer, data]);
+
+        let boundary = this.responseBuffer.indexOf('\r\n');
+        while (boundary !== -1) {
+          const frame = this.responseBuffer.slice(0, boundary).toString('utf8');
+          this.responseBuffer = this.responseBuffer.slice(boundary + 2);
+
+          if (frame) {
+            try {
+              const response = parseIncomingMessage(frame);
+
+              this.emit(YeelightDeviceEvents.DATA, response);
+
+              if ('id' in response && this.pendingCommands.has(response.id)) {
+                const pendingCommand = this.pendingCommands.get(response.id);
+                this.pendingCommands.delete(response.id);
+                if (pendingCommand) {
+                  clearTimeout(pendingCommand.timeout);
+                }
+
+                if ('error' in response) {
+                  pendingCommand?.reject(new YeelightProtocolError(response.id, response.error));
+                } else {
+                  pendingCommand?.resolve(response.result);
+                }
+              }
+
+              if ('method' in response && response.method === 'props') {
+                this.onPropsChange(response.params);
+              }
+            } catch (error) {
+              const parseError = toError(error);
+              this.emit(YeelightDeviceEvents.ERROR, parseError);
+              this.finalizeDisconnect(parseError);
+              return;
+            }
+          }
+
+          boundary = this.responseBuffer.indexOf('\r\n');
+        }
+      });
+
+      socket.on('error', (error: Error) => {
+        this.emit(YeelightDeviceEvents.ERROR, error);
+        this.finalizeDisconnect(error);
+      });
+
+      socket.on('end', () => {
+        this.finalizeDisconnect();
+      });
+
+      socket.connect({ host: this.device.host, port: this.device.port }, async () => {
+        try {
+          const response = await this.command({
+            method: YeelightMethod.GET_PROP,
+            params: YEELIGHT_PROPS,
+          });
+
+          YEELIGHT_PROPS.forEach((prop, index) => {
+            this.props[prop] = response[index];
+          });
+
+          this.connectionState = YeelightConnectionState.READY;
+          const completeConnection = this.connectResolve;
+          this.connectPromise = null;
+          this.connectResolve = null;
+          this.connectReject = null;
+          this.emit(YeelightDeviceEvents.CONNECT);
+          completeConnection?.();
+        } catch (error) {
+          this.finalizeDisconnect(toError(error));
+        }
+      });
+    } catch (error) {
+      this.finalizeDisconnect(toError(error));
+    }
+
+    return connectPromise;
   }
 
   public close(error?: Error): Promise<void> {

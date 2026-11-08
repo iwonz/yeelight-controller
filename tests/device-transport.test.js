@@ -309,3 +309,22 @@ test('close rejects commands waiting in the rate-limit queue', async (t) => {
   await assert.rejects(queued, YeelightConnectionClosedError);
   assert.equal(fixture.server.commands.filter((command) => command.method === YeelightMethod.TOGGLE).length, 0);
 });
+
+test('a synchronous connect failure does not poison a later retry', async (t) => {
+  const server = await createFakeYeelight((command, socket) => {
+    sendMessage(socket, { id: command.id, result: command.params.map(() => '') });
+  });
+  const device = new YeelightDevice({ host: server.host, port: 70000 });
+  t.after(async () => {
+    await device.close();
+    await server.close();
+  });
+
+  await assert.rejects(device.connect(), RangeError);
+  assert.equal(device.getConnectionState(), YeelightConnectionState.DISCONNECTED);
+
+  device.updateFromDiscovery({ host: server.host, port: server.port }, {});
+  await withTimeout(device.connect());
+
+  assert.equal(device.isConnected(), true);
+});
