@@ -25,7 +25,9 @@
     "build": "rimraf dist && npm run tsc",
     "tsc": "./node_modules/.bin/tsc -p tsconfig.json && tsc -p tsconfig-cjs.json",
     "prepublish": "npm run build",
-    "test": "echo \"Error: no test specified\" && exit 0",
+    "test": "npm run build && node --test tests",
+    "lint": "eslint 'src/**/*.ts'",
+    "check": "npm run test && npm run lint",
     "release": "np",
     "doc": "typedoc src --excludeExternals"
   },
