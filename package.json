@@ -1,18 +1,22 @@
 {
   "name": "@iwonz/yeelight-controller",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "Library for using Yeelight WiFi Light Inter-Operation Specification",
   "keywords": [
     "yeelight bulbs wifi"
   ],
-  "repository": "https://github.com/iwonz/yeelight-controller.git",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iwonz/yeelight-controller.git"
+  },
   "author": "iwonz <iwonz@yandex.ru>",
   "license": "MIT",
   "packageManager": "yarn@1.22.22",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
   "files": [
-    "dist/"
+    "dist/",
+    "CHANGELOG.md"
   ],
   "types": "dist/typings/index.d.ts",
   "bugs": {
