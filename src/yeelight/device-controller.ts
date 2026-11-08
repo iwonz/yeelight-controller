@@ -25,10 +25,18 @@ import {
   validateFlowExpression,
 } from './validation';
 import { YeelightValidationError } from './errors';
+import { YeelightBackgroundController } from './background-controller';
 
 export class YeelightDevice extends YeelightDeviceTransport {
+  public readonly background: YeelightBackgroundController;
+
   constructor(state: YeelightDeviceInfo, options: YeelightDeviceOptions = {}) {
     super(state, options);
+    this.background = new YeelightBackgroundController(this);
+  }
+
+  public get main(): this {
+    return this;
   }
 
   public async getProps(props: YeelightProps[]): Promise<YeelightDeviceProps> {

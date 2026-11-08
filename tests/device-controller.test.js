@@ -1,7 +1,16 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { YeelightDeviceController, YeelightMethod, YeelightMusicAction, YeelightProps } = require('../dist/cjs');
+const {
+  YeelightColorFlowAction,
+  YeelightDeviceController,
+  YeelightEffect,
+  YeelightFlowExpressionMode,
+  YeelightMethod,
+  YeelightMusicAction,
+  YeelightPower,
+  YeelightProps,
+} = require('../dist/cjs');
 const { createFakeYeelight, sendMessage } = require('./support/fake-yeelight');
 
 const connectController = async (onCommand, options) => {
@@ -92,4 +101,37 @@ test('music mode bypasses the normal command quota', async (t) => {
   const toggles = receivedAt.filter((entry) => entry.method === YeelightMethod.TOGGLE);
   assert.equal(toggles.length, 3);
   assert.ok(toggles.at(-1).time - toggles[0].time < 50);
+});
+
+test('background facade targets background protocol methods', async (t) => {
+  const commands = [];
+  const fixture = await connectController((command) => {
+    commands.push(command);
+    return undefined;
+  });
+  t.after(() => fixture.close());
+
+  assert.equal(fixture.device.main, fixture.device);
+  await fixture.device.background.setRgb(255, YeelightEffect.SUDDEN, 30);
+  await fixture.device.background.setPower(YeelightPower.ON, YeelightEffect.SMOOTH, 100);
+  await fixture.device.background.startCf(1, YeelightColorFlowAction.STAY, [
+    [50, YeelightFlowExpressionMode.COLOR, 255, 20],
+  ]);
+  await fixture.device.background.setSceneColor(255, 20);
+  await fixture.device.background.adjustBright(10, 30);
+  await fixture.device.background.toggle();
+  await fixture.device.background.setDefault();
+
+  assert.deepEqual(
+    commands.map((command) => command.method),
+    [
+      YeelightMethod.BG_SET_RGB,
+      YeelightMethod.BG_SET_POWER,
+      YeelightMethod.BG_START_CF,
+      YeelightMethod.BG_SET_SCENE,
+      YeelightMethod.BG_ADJUST_BRIGHT,
+      YeelightMethod.BG_TOGGLE,
+      YeelightMethod.BG_SET_DEFAULT,
+    ],
+  );
 });

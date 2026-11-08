@@ -169,3 +169,12 @@ device.connect();
 Call `device.disconnect();` if you want to disconnect device.
 
 Like on discover YeelightDevice get you wrapper functions to all official commands and automatically clamp parameters.
+
+Main-light methods are available directly on the device. Background-light methods are grouped under
+`device.background`, so no positional `isBg` flag is needed:
+
+```javascript
+await device.setRgb(0xff0000, YeelightEffect.SMOOTH, 500);
+await device.background.setRgb(0x0000ff, YeelightEffect.SMOOTH, 500);
+await device.background.toggle();
+```

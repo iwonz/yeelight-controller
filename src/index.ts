@@ -1,3 +1,4 @@
+export * from './yeelight/background-controller';
 export * from './yeelight/discovery';
 export * from './yeelight/discovery-message';
 export * from './yeelight/device';
