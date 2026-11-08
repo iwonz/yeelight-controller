@@ -14,6 +14,7 @@ export class YeelightDevice extends EventEmitter {
 
   private device: YeelightDeviceInfo;
   private props: YeelightDeviceProps = {};
+  private responseBuffer = Buffer.alloc(0);
 
   private commandPromiseResolvers: Map<number, (value: any) => void> = new Map();
   private commandId = 0;
@@ -29,22 +30,35 @@ export class YeelightDevice extends EventEmitter {
       this.socket = new net.Socket();
 
       this.socket.on('data', (data: Buffer) => {
-        try {
-          const response = JSON.parse(data.toString('utf-8'));
+        this.responseBuffer = Buffer.concat([this.responseBuffer, data]);
 
-          this.emit(YeelightDeviceEvents.DATA, response);
+        let boundary = this.responseBuffer.indexOf('\r\n');
+        while (boundary !== -1) {
+          const frame = this.responseBuffer.slice(0, boundary).toString('utf8');
+          this.responseBuffer = this.responseBuffer.slice(boundary + 2);
 
-          if (response.id && this.commandPromiseResolvers.has(response.id)) {
-            this.commandPromiseResolvers.get(response.id)?.(response.result);
-            this.commandPromiseResolvers.delete(response.id);
+          if (frame) {
+            try {
+              const response = JSON.parse(frame);
+
+              this.emit(YeelightDeviceEvents.DATA, response);
+
+              if (response.id && this.commandPromiseResolvers.has(response.id)) {
+                this.commandPromiseResolvers.get(response.id)?.(response.result);
+                this.commandPromiseResolvers.delete(response.id);
+              }
+
+              if (response?.method === 'props') {
+                this.onPropsChange(response.params);
+              }
+            } catch (error) {
+              this.emit(YeelightDeviceEvents.ERROR, error);
+              this.disconnect();
+              return;
+            }
           }
 
-          if (response?.method === 'props') {
-            this.onPropsChange(response.params);
-          }
-        } catch (error) {
-          this.emit(YeelightDeviceEvents.ERROR, error);
-          this.disconnect();
+          boundary = this.responseBuffer.indexOf('\r\n');
         }
       });
 
@@ -78,6 +92,7 @@ export class YeelightDevice extends EventEmitter {
   public disconnect = (error?: any): void => {
     this.socket?.destroy();
     this.socket = null;
+    this.responseBuffer = Buffer.alloc(0);
 
     this.emit(YeelightDeviceEvents.DISCONNECT, error);
   };
