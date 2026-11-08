@@ -1,4 +1,5 @@
 export enum YeelightDiscoveryEvents {
+  ERROR = 'ERROR',
   DISCONNECT = 'DISCONNECT',
   DISCOVER_DEVICE = 'DISCOVER_DEVICE',
   CONNECT_DEVICE = 'CONNECT_DEVICE',

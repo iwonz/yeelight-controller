@@ -35,10 +35,22 @@ export class YeelightDiscovery extends EventEmitter {
         return;
       }
 
-      socket.addMembership(MULTICAST_IP);
+      try {
+        socket.addMembership(MULTICAST_IP);
 
-      const buffer = Buffer.from('M-SEARCH * HTTP/1.1\r\nMAN: "ssdp:discover"\r\nST: wifi_bulb\r\n');
-      socket.send(buffer, 0, buffer.length, MULTICAST_PORT, MULTICAST_IP);
+        const buffer = Buffer.from('M-SEARCH * HTTP/1.1\r\nMAN: "ssdp:discover"\r\nST: wifi_bulb\r\n');
+        socket.send(buffer, 0, buffer.length, MULTICAST_PORT, MULTICAST_IP, (sendError) => {
+          if (sendError) {
+            this.handleSocketError(socket, sendError);
+          }
+        });
+      } catch (error) {
+        this.handleSocketError(socket, error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+
+    socket.on('error', (socketError: Error) => {
+      this.handleSocketError(socket, socketError);
     });
 
     socket.on('message', (deviceInfo: Buffer) => {
@@ -104,11 +116,15 @@ export class YeelightDiscovery extends EventEmitter {
     try {
       socket.bind(MULTICAST_PORT, () => {
         if (this.socket === socket) {
-          socket.setBroadcast(true);
+          try {
+            socket.setBroadcast(true);
+          } catch (error) {
+            this.handleSocketError(socket, error instanceof Error ? error : new Error(String(error)));
+          }
         }
       });
     } catch (error) {
-      void this.deactivate(error);
+      this.handleSocketError(socket, error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -160,5 +176,14 @@ export class YeelightDiscovery extends EventEmitter {
         return device.getName() === deviceName;
       }) || null
     );
+  }
+
+  private handleSocketError(socket: dgram.Socket, error: Error): void {
+    if (this.socket !== socket) {
+      return;
+    }
+
+    this.emit(YeelightDiscoveryEvents.ERROR, error);
+    void this.deactivate(error);
   }
 }
