@@ -181,7 +181,7 @@ export class YeelightDevice extends YeelightDeviceTransport {
     val3: number | string,
     isBg = false,
   ): Promise<YeelightResponseSuccess> {
-    const params: [YeelightSceneClass, number?, number?, any?] = [sceneClass];
+    const params: [YeelightSceneClass, number?, number?, (number | string)?] = [sceneClass];
 
     switch (sceneClass) {
       case YeelightSceneClass.COLOR:

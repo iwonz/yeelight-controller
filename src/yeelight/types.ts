@@ -125,10 +125,10 @@ export enum YeelightMethod {
   BG_ADJUST_COLOR = 'bg_adjust_color',
 }
 
-export interface YeelightCommand {
+export interface YeelightCommand<M extends string = YeelightMethod> {
   id?: number;
-  method: YeelightMethod;
-  params: any[];
+  method: M;
+  params: readonly unknown[];
 }
 
 export interface YeelightDeviceInfo {
@@ -136,7 +136,7 @@ export interface YeelightDeviceInfo {
 
   model?: string;
   version?: number;
-  support?: YeelightMethod[];
+  support?: readonly string[];
 
   location?: string;
   host: string;
@@ -181,3 +181,39 @@ export enum YeelightEffect {
 }
 
 export type YeelightResponseSuccess = ['ok'];
+
+export type YeelightCommandResult<M extends string> = M extends YeelightMethod.GET_PROP
+  ? string[]
+  : M extends YeelightMethod.CRON_GET
+  ? YeelightCron[]
+  : M extends YeelightMethod
+  ? YeelightResponseSuccess
+  : unknown;
+
+export interface YeelightResultMessage {
+  id: number;
+  result: unknown[];
+}
+
+export interface YeelightErrorMessage {
+  id: number;
+  error: {
+    code: number;
+    message: string;
+  };
+}
+
+export interface YeelightPropsMessage {
+  method: 'props';
+  params: YeelightDeviceProps;
+}
+
+export type YeelightIncomingMessage = YeelightResultMessage | YeelightErrorMessage | YeelightPropsMessage;
+
+export interface YeelightDeviceEventMap {
+  [YeelightDeviceEvents.CONNECT]: [];
+  [YeelightDeviceEvents.DISCONNECT]: [error?: Error];
+  [YeelightDeviceEvents.PROPS_CHANGE]: [props: Readonly<YeelightDeviceProps>];
+  [YeelightDeviceEvents.DATA]: [data: YeelightIncomingMessage];
+  [YeelightDeviceEvents.ERROR]: [error: Error];
+}

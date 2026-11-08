@@ -1,16 +1,42 @@
 import EventEmitter from 'events';
 import dgram from 'dgram';
-import { YeelightCommand, YeelightDeviceEvents, YeelightDiscoveryEvents, YeelightMethod } from './types';
+import {
+  YeelightCommand,
+  YeelightCommandResult,
+  YeelightDeviceEvents,
+  YeelightDeviceProps,
+  YeelightDiscoveryEvents,
+  YeelightIncomingMessage,
+} from './types';
 import { YeelightDeviceController } from './device-controller';
 import { parseYeelightDiscoveryMessage } from './discovery-message';
 import { YeelightDeviceOptions } from './device-transport';
+
+type EventListener = Parameters<EventEmitter['on']>[1];
 
 const MULTICAST_IP = '239.255.255.250';
 const MULTICAST_PORT = 1982;
 
 export interface YeelightDiscoveryOptions {
   socketFactory?: () => dgram.Socket;
-  deviceFactory?: (state: ConstructorParameters<typeof YeelightDeviceController>[0], options: YeelightDeviceOptions) => YeelightDeviceController;
+  deviceFactory?: (
+    state: ConstructorParameters<typeof YeelightDeviceController>[0],
+    options: YeelightDeviceOptions,
+  ) => YeelightDeviceController;
+}
+
+export interface YeelightDiscoveryEventMap {
+  [YeelightDiscoveryEvents.ERROR]: [error: Error];
+  [YeelightDiscoveryEvents.DISCONNECT]: [error?: Error];
+  [YeelightDiscoveryEvents.DISCOVER_DEVICE]: [device: YeelightDeviceController];
+  [YeelightDiscoveryEvents.CONNECT_DEVICE]: [device: YeelightDeviceController];
+  [YeelightDiscoveryEvents.DISCONNECT_DEVICE]: [device: YeelightDeviceController, error?: Error];
+  [YeelightDiscoveryEvents.DEVICE_CHANGE_PROPS]: [
+    device: YeelightDeviceController,
+    props: Readonly<YeelightDeviceProps>,
+  ];
+  [YeelightDiscoveryEvents.DEVICE_DATA]: [device: YeelightDeviceController, data: YeelightIncomingMessage];
+  [YeelightDiscoveryEvents.DEVICE_ERROR]: [device: YeelightDeviceController, error: Error];
 }
 
 export class YeelightDiscovery extends EventEmitter {
@@ -23,7 +49,19 @@ export class YeelightDiscovery extends EventEmitter {
     super();
 
     this.socketFactory = options.socketFactory ?? (() => dgram.createSocket({ type: 'udp4', reuseAddr: true }));
-    this.deviceFactory = options.deviceFactory ?? ((state, deviceOptions) => new YeelightDeviceController(state, deviceOptions));
+    this.deviceFactory =
+      options.deviceFactory ?? ((state, deviceOptions) => new YeelightDeviceController(state, deviceOptions));
+  }
+
+  public on<E extends YeelightDiscoveryEvents>(
+    event: E,
+    listener: (...args: YeelightDiscoveryEventMap[E]) => void,
+  ): this {
+    return super.on(event, listener as EventListener);
+  }
+
+  public emit<E extends YeelightDiscoveryEvents>(event: E, ...args: YeelightDiscoveryEventMap[E]): boolean {
+    return super.emit(event, ...args);
   }
 
   public activate(): void {
@@ -61,7 +99,7 @@ export class YeelightDiscovery extends EventEmitter {
         id: message.id,
         model: message.model,
         version: message.version,
-        support: message.support as YeelightMethod[] | undefined,
+        support: message.support,
         location: message.location,
         host: message.host,
         port: message.port,
@@ -118,13 +156,13 @@ export class YeelightDiscovery extends EventEmitter {
     }
   }
 
-  public async deactivate(error?: any): Promise<void> {
+  public async deactivate(error?: Error): Promise<void> {
     const socket = this.socket;
     const devices = Array.from(this.devices.values());
     this.socket = null;
     this.devices.clear();
 
-    await Promise.all(devices.map((device) => device.close(error instanceof Error ? error : undefined)));
+    await Promise.all(devices.map((device) => device.close(error)));
 
     if (socket) {
       socket.removeAllListeners();
@@ -156,8 +194,8 @@ export class YeelightDiscovery extends EventEmitter {
     });
   }
 
-  public command(command: YeelightCommand): Promise<any[]> {
-    const promises: any[] = [];
+  public command<M extends string>(command: YeelightCommand<M>): Promise<YeelightCommandResult<M>[]> {
+    const promises: Promise<YeelightCommandResult<M>>[] = [];
 
     this.devices.forEach((device) => {
       promises.push(device.command(command));
@@ -193,7 +231,11 @@ export class YeelightDiscovery extends EventEmitter {
 
   private connectDevice(device: YeelightDeviceController): void {
     void device.connect().catch((deviceError) => {
-      this.emit(YeelightDiscoveryEvents.DEVICE_ERROR, device, deviceError);
+      this.emit(
+        YeelightDiscoveryEvents.DEVICE_ERROR,
+        device,
+        deviceError instanceof Error ? deviceError : new Error(String(deviceError)),
+      );
     });
   }
 }

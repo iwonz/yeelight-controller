@@ -3,10 +3,13 @@ import net from 'net';
 import {
   YEELIGHT_PROPS,
   YeelightCommand,
+  YeelightCommandResult,
   YeelightConnectionState,
+  YeelightDeviceEventMap,
   YeelightDeviceEvents,
   YeelightDeviceInfo,
   YeelightDeviceProps,
+  YeelightIncomingMessage,
   YeelightMethod,
 } from './types';
 import {
@@ -18,11 +21,51 @@ import {
 } from './errors';
 import { CommandRateLimiter } from './rate-limiter';
 
+type EventListener = Parameters<EventEmitter['on']>[1];
+
 interface PendingCommand {
-  resolve: (value: any) => void;
-  reject: (reason: any) => void;
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
   timeout: NodeJS.Timeout;
 }
+
+const toError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const parseIncomingMessage = (frame: string): YeelightIncomingMessage => {
+  const value: unknown = JSON.parse(frame);
+  if (!isRecord(value)) {
+    throw new Error('Invalid Yeelight message');
+  }
+
+  if (typeof value.id === 'number' && Array.isArray(value.result)) {
+    return { id: value.id, result: value.result };
+  }
+  if (
+    typeof value.id === 'number' &&
+    isRecord(value.error) &&
+    typeof value.error.code === 'number' &&
+    typeof value.error.message === 'string'
+  ) {
+    return {
+      id: value.id,
+      error: { code: value.error.code, message: value.error.message },
+    };
+  }
+  if (value.method === 'props' && isRecord(value.params)) {
+    const params: YeelightDeviceProps = {};
+    Object.entries(value.params).forEach(([property, propertyValue]) => {
+      if (typeof propertyValue === 'string' && YEELIGHT_PROPS.includes(property as keyof YeelightDeviceProps)) {
+        params[property as keyof YeelightDeviceProps] = propertyValue;
+      }
+    });
+    return { method: 'props', params };
+  }
+
+  throw new Error('Invalid Yeelight message shape');
+};
 
 export interface YeelightDeviceOptions {
   commandTimeout?: number;
@@ -44,7 +87,7 @@ export class YeelightDeviceTransport extends EventEmitter {
   private connectionState = YeelightConnectionState.DISCONNECTED;
   private connectPromise: Promise<void> | null = null;
   private connectResolve: (() => void) | null = null;
-  private connectReject: ((reason: any) => void) | null = null;
+  private connectReject: ((reason: unknown) => void) | null = null;
   private lastSeen = Date.now();
   private readonly rateLimiter: CommandRateLimiter;
 
@@ -55,6 +98,14 @@ export class YeelightDeviceTransport extends EventEmitter {
     this.props = { ...options.initialProps };
     this.commandTimeout = options.commandTimeout ?? 5000;
     this.rateLimiter = new CommandRateLimiter(options.maxCommandsPerWindow ?? 60, options.rateLimitWindow ?? 60000);
+  }
+
+  public on<E extends YeelightDeviceEvents>(event: E, listener: (...args: YeelightDeviceEventMap[E]) => void): this {
+    return super.on(event, listener as EventListener);
+  }
+
+  public emit<E extends YeelightDeviceEvents>(event: E, ...args: YeelightDeviceEventMap[E]): boolean {
+    return super.emit(event, ...args);
   }
 
   public connect(): Promise<void> {
@@ -85,30 +136,31 @@ export class YeelightDeviceTransport extends EventEmitter {
 
             if (frame) {
               try {
-                const response = JSON.parse(frame);
+                const response = parseIncomingMessage(frame);
 
                 this.emit(YeelightDeviceEvents.DATA, response);
 
-                if (response.id !== undefined && response.id !== null && this.pendingCommands.has(response.id)) {
+                if ('id' in response && this.pendingCommands.has(response.id)) {
                   const pendingCommand = this.pendingCommands.get(response.id);
                   this.pendingCommands.delete(response.id);
                   if (pendingCommand) {
                     clearTimeout(pendingCommand.timeout);
                   }
 
-                  if (response.error) {
+                  if ('error' in response) {
                     pendingCommand?.reject(new YeelightProtocolError(response.id, response.error));
                   } else {
                     pendingCommand?.resolve(response.result);
                   }
                 }
 
-                if (response?.method === 'props') {
+                if ('method' in response && response.method === 'props') {
                   this.onPropsChange(response.params);
                 }
               } catch (error) {
-                this.emit(YeelightDeviceEvents.ERROR, error);
-                this.finalizeDisconnect(error instanceof Error ? error : undefined);
+                const parseError = toError(error);
+                this.emit(YeelightDeviceEvents.ERROR, parseError);
+                this.finalizeDisconnect(parseError);
                 return;
               }
             }
@@ -145,11 +197,11 @@ export class YeelightDeviceTransport extends EventEmitter {
             this.emit(YeelightDeviceEvents.CONNECT);
             completeConnection?.();
           } catch (error) {
-            this.finalizeDisconnect(error instanceof Error ? error : undefined);
+            this.finalizeDisconnect(toError(error));
           }
         });
       } catch (error) {
-        this.finalizeDisconnect(error instanceof Error ? error : undefined);
+        this.finalizeDisconnect(toError(error));
       }
     });
 
@@ -167,8 +219,8 @@ export class YeelightDeviceTransport extends EventEmitter {
     return Promise.resolve();
   }
 
-  public disconnect = (error?: any): void => {
-    void this.close(error instanceof Error ? error : undefined);
+  public disconnect = (error?: Error): void => {
+    void this.close(error);
   };
 
   public isConnected(): boolean {
@@ -214,10 +266,10 @@ export class YeelightDeviceTransport extends EventEmitter {
     this.emit(YeelightDeviceEvents.DISCONNECT, error);
   }
 
-  public async command(command: YeelightCommand): Promise<any> {
+  public async command<M extends string>(command: YeelightCommand<M>): Promise<YeelightCommandResult<M>> {
     if (this.device.support && !this.device.support.includes(command.method)) {
-      return Promise.reject(
-        `Method ${command.method} does not support by device. Allowed only: ${this.device.support.join(', ')}`,
+      throw new Error(
+        `Method ${command.method} is not supported by device. Allowed: ${this.device.support.join(', ')}`,
       );
     }
 
@@ -235,10 +287,10 @@ export class YeelightDeviceTransport extends EventEmitter {
 
     const id = command.id ?? this.processCommandId();
     if (this.pendingCommands.has(id)) {
-      return Promise.reject(new YeelightDuplicateCommandIdError(id));
+      throw new YeelightDuplicateCommandIdError(id);
     }
 
-    return new Promise((resolve, reject) => {
+    const result = await new Promise<unknown>((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (this.pendingCommands.delete(id)) {
           reject(new YeelightCommandTimeoutError(id, command.method, this.commandTimeout));
@@ -260,6 +312,11 @@ export class YeelightDeviceTransport extends EventEmitter {
         reject(error);
       }
     });
+    return result as YeelightCommandResult<M>;
+  }
+
+  public rawCommand<TResult = unknown>(method: string, params: readonly unknown[]): Promise<TResult> {
+    return this.command({ method, params }) as Promise<TResult>;
   }
 
   public getId(): string {
@@ -308,12 +365,10 @@ export class YeelightDeviceTransport extends EventEmitter {
   }
 
   private onPropsChange(props: YeelightDeviceProps): void {
-    Object.keys(props).forEach((prop) => {
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      this.props[prop] = props[prop];
+    Object.entries(props).forEach(([prop, value]) => {
+      this.props[prop as keyof YeelightDeviceProps] = value;
     });
 
-    this.emit(YeelightDeviceEvents.PROPS_CHANGE, this.props);
+    this.emit(YeelightDeviceEvents.PROPS_CHANGE, { ...this.props });
   }
 }
