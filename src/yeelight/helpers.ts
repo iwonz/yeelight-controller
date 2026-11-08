@@ -1,5 +1,5 @@
-import { clamp } from '../utils';
 import { YeelightFlowExpression, YeelightFlowExpressionMode } from './types';
+import { clampProtocolInteger } from './validation';
 
 export const getFlowExpression = (
   duration: number,
@@ -7,11 +7,14 @@ export const getFlowExpression = (
   value: number,
   brightness: number,
 ): YeelightFlowExpression => {
+  duration = clampProtocolInteger(duration, 'duration', 50);
   if (mode === YeelightFlowExpressionMode.COLOR) {
-    value = clamp(value, 0, 16777215);
+    value = clampProtocolInteger(value, 'value', 0, 16777215);
   } else if (mode === YeelightFlowExpressionMode.COLOR_TEMPERATURE) {
-    value = clamp(value, 1700, 6500);
+    value = clampProtocolInteger(value, 'value', 1700, 6500);
+  } else {
+    value = clampProtocolInteger(value, 'value');
   }
 
-  return [clamp(duration, 50), mode, value, brightness === -1 ? -1 : clamp(brightness, 1, 100)];
+  return [duration, mode, value, brightness === -1 ? -1 : clampProtocolInteger(brightness, 'brightness', 1, 100)];
 };

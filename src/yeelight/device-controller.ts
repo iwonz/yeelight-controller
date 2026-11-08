@@ -17,7 +17,14 @@ import {
   YeelightResponseSuccess,
   YeelightSceneClass,
 } from './types';
-import { clamp } from '../utils';
+import {
+  clampProtocolInteger,
+  requireByteLength,
+  requireNonEmptyString,
+  requireProtocolInteger,
+  validateFlowExpression,
+} from './validation';
+import { YeelightValidationError } from './errors';
 
 export class YeelightDeviceController extends YeelightDevice {
   constructor(state: YeelightDeviceInfo, options: YeelightDeviceOptions = {}) {
@@ -47,7 +54,7 @@ export class YeelightDeviceController extends YeelightDevice {
   ): Promise<YeelightResponseSuccess> {
     return super.command({
       method: isBg ? YeelightMethod.BG_SET_CT_ABX : YeelightMethod.SET_CT_ABX,
-      params: [clamp(value, 1700, 6500), effect, clamp(duration, 30)],
+      params: [clampProtocolInteger(value, 'ct', 1700, 6500), effect, clampProtocolInteger(duration, 'duration', 30)],
     });
   }
 
@@ -59,7 +66,7 @@ export class YeelightDeviceController extends YeelightDevice {
   ): Promise<YeelightResponseSuccess> {
     return super.command({
       method: isBg ? YeelightMethod.BG_SET_RGB : YeelightMethod.SET_RGB,
-      params: [clamp(value, 0, 16777215), effect, clamp(duration, 30)],
+      params: [clampProtocolInteger(value, 'rgb', 0, 16777215), effect, clampProtocolInteger(duration, 'duration', 30)],
     });
   }
 
@@ -72,7 +79,12 @@ export class YeelightDeviceController extends YeelightDevice {
   ): Promise<YeelightResponseSuccess> {
     return super.command({
       method: isBg ? YeelightMethod.BG_SET_HSV : YeelightMethod.SET_HSV,
-      params: [clamp(hue, 0, 359), clamp(saturation, 0, 100), effect, clamp(duration, 30)],
+      params: [
+        clampProtocolInteger(hue, 'hue', 0, 359),
+        clampProtocolInteger(saturation, 'saturation', 0, 100),
+        effect,
+        clampProtocolInteger(duration, 'duration', 30),
+      ],
     });
   }
 
@@ -84,7 +96,11 @@ export class YeelightDeviceController extends YeelightDevice {
   ): Promise<YeelightResponseSuccess> {
     return super.command({
       method: isBg ? YeelightMethod.BG_SET_BRIGHT : YeelightMethod.SET_BRIGHT,
-      params: [clamp(value, 1, 100), effect, clamp(duration, 30)],
+      params: [
+        clampProtocolInteger(value, 'brightness', 1, 100),
+        effect,
+        clampProtocolInteger(duration, 'duration', 30),
+      ],
     });
   }
 
@@ -97,7 +113,12 @@ export class YeelightDeviceController extends YeelightDevice {
   ): Promise<YeelightResponseSuccess> {
     return super.command({
       method: isBg ? YeelightMethod.BG_SET_POWER : YeelightMethod.SET_POWER,
-      params: [value, effect, clamp(duration, 30), mode],
+      params: [
+        value,
+        effect,
+        clampProtocolInteger(duration, 'duration', 30),
+        requireProtocolInteger(mode, 'mode', 0, 5),
+      ],
     });
   }
 
@@ -121,6 +142,9 @@ export class YeelightDeviceController extends YeelightDevice {
     flowExpression: YeelightFlowExpression[],
     isBg: boolean,
   ): Promise<YeelightResponseSuccess> {
+    requireProtocolInteger(count, 'count', 0);
+    requireProtocolInteger(action, 'action', 0, 2);
+    validateFlowExpression(flowExpression);
     const expressions = flowExpression
       .reduce((result, flowExpression) => {
         result.push(...flowExpression);
@@ -153,19 +177,24 @@ export class YeelightDeviceController extends YeelightDevice {
 
     switch (sceneClass) {
       case YeelightSceneClass.COLOR:
-        params.push(val1, val2);
+        params.push(clampProtocolInteger(val1, 'rgb', 0, 16777215), clampProtocolInteger(val2, 'brightness', 1, 100));
         break;
       case YeelightSceneClass.HSV:
-        params.push(val1, val2, val3);
+        params.push(
+          clampProtocolInteger(val1, 'hue', 0, 359),
+          clampProtocolInteger(val2, 'saturation', 0, 100),
+          clampProtocolInteger(Number(val3), 'brightness', 1, 100),
+        );
         break;
       case YeelightSceneClass.CT:
-        params.push(val1, val2);
+        params.push(clampProtocolInteger(val1, 'ct', 1700, 6500), clampProtocolInteger(val2, 'brightness', 1, 100));
         break;
       case YeelightSceneClass.CF:
+        requireNonEmptyString(String(val3), 'flowExpression');
         params.push(0, 0, val3);
         break;
       case YeelightSceneClass.AUTO_DELAY_OFF:
-        params.push(val1, val2);
+        params.push(clampProtocolInteger(val1, 'brightness', 1, 100), requireProtocolInteger(val2, 'minutes', 1, 60));
         break;
     }
 
@@ -178,7 +207,11 @@ export class YeelightDeviceController extends YeelightDevice {
   public setSceneColor(rgbColor: number, brightness: number, isBg = false): Promise<YeelightResponseSuccess> {
     return super.command({
       method: isBg ? YeelightMethod.BG_SET_SCENE : YeelightMethod.SET_SCENE,
-      params: [YeelightSceneClass.COLOR, clamp(rgbColor, 0, 16777215), clamp(brightness, 1, 100)],
+      params: [
+        YeelightSceneClass.COLOR,
+        clampProtocolInteger(rgbColor, 'rgb', 0, 16777215),
+        clampProtocolInteger(brightness, 'brightness', 1, 100),
+      ],
     });
   }
 
@@ -190,18 +223,28 @@ export class YeelightDeviceController extends YeelightDevice {
   ): Promise<YeelightResponseSuccess> {
     return super.command({
       method: isBg ? YeelightMethod.BG_SET_SCENE : YeelightMethod.SET_SCENE,
-      params: [YeelightSceneClass.HSV, clamp(hue, 0, 359), clamp(saturation, 0, 100), clamp(brightness, 1, 100)],
+      params: [
+        YeelightSceneClass.HSV,
+        clampProtocolInteger(hue, 'hue', 0, 359),
+        clampProtocolInteger(saturation, 'saturation', 0, 100),
+        clampProtocolInteger(brightness, 'brightness', 1, 100),
+      ],
     });
   }
 
   public setSceneCt(value: number, brightness: number, isBg = false): Promise<YeelightResponseSuccess> {
     return super.command({
       method: isBg ? YeelightMethod.BG_SET_SCENE : YeelightMethod.SET_SCENE,
-      params: [YeelightSceneClass.CT, clamp(value, 1700, 6500), clamp(brightness, 1, 100)],
+      params: [
+        YeelightSceneClass.CT,
+        clampProtocolInteger(value, 'ct', 1700, 6500),
+        clampProtocolInteger(brightness, 'brightness', 1, 100),
+      ],
     });
   }
 
   public setSceneCf(flowExpression: YeelightFlowExpression[], isBg = false): Promise<YeelightResponseSuccess> {
+    validateFlowExpression(flowExpression);
     const expressions = flowExpression
       .reduce((result, flowExpression) => {
         result.push(...flowExpression);
@@ -219,14 +262,18 @@ export class YeelightDeviceController extends YeelightDevice {
   public setSceneAutoDelayOff(brightness: number, minutes: number, isBg = false): Promise<YeelightResponseSuccess> {
     return super.command({
       method: isBg ? YeelightMethod.BG_SET_SCENE : YeelightMethod.SET_SCENE,
-      params: [YeelightSceneClass.AUTO_DELAY_OFF, clamp(brightness, 1, 100), minutes],
+      params: [
+        YeelightSceneClass.AUTO_DELAY_OFF,
+        clampProtocolInteger(brightness, 'brightness', 1, 100),
+        requireProtocolInteger(minutes, 'minutes', 1, 60),
+      ],
     });
   }
 
   public cronAdd(type: YeelightCronType, value: number): Promise<YeelightResponseSuccess> {
     return super.command({
       method: YeelightMethod.CRON_ADD,
-      params: [type, clamp(value, 1)],
+      params: [requireProtocolInteger(type, 'type', 0, 0), clampProtocolInteger(value, 'value', 1)],
     });
   }
 
@@ -249,6 +296,9 @@ export class YeelightDeviceController extends YeelightDevice {
     prop: YeelightAdjustProp,
     isBg = false,
   ): Promise<YeelightResponseSuccess> {
+    if (prop === YeelightAdjustProp.COLOR && action !== YeelightAdjustAction.CIRCLE) {
+      throw new YeelightValidationError('action', 'must be circle when adjusting color');
+    }
     return super.command({
       method: isBg ? YeelightMethod.BG_SET_ADJUST : YeelightMethod.SET_ADJUST,
       params: [action, prop],
@@ -264,6 +314,11 @@ export class YeelightDeviceController extends YeelightDevice {
   }
 
   public setMusic(action: YeelightMusicAction, host?: string, port?: number): Promise<YeelightResponseSuccess> {
+    requireProtocolInteger(action, 'action', 0, 1);
+    if (action === YeelightMusicAction.TURN_ON) {
+      host = requireNonEmptyString(host, 'host');
+      port = requireProtocolInteger(Number(port), 'port', 1, 65535);
+    }
     return super.command({
       method: YeelightMethod.SET_MUSIC,
       params: action === YeelightMusicAction.TURN_OFF ? [action] : [action, host, port],
@@ -271,6 +326,7 @@ export class YeelightDeviceController extends YeelightDevice {
   }
 
   public setName(name: string): Promise<YeelightResponseSuccess> {
+    requireByteLength(name, 'name', 64);
     return super.command({
       method: YeelightMethod.SET_NAME,
       params: [name],
@@ -294,21 +350,30 @@ export class YeelightDeviceController extends YeelightDevice {
   public adjustBright(percentage: number, duration: number, isBg = false): Promise<YeelightResponseSuccess> {
     return super.command({
       method: isBg ? YeelightMethod.BG_ADJUST_BRIGHT : YeelightMethod.ADJUST_BRIGHT,
-      params: [clamp(percentage, -100, 100), clamp(duration, 30)],
+      params: [
+        clampProtocolInteger(percentage, 'percentage', -100, 100),
+        clampProtocolInteger(duration, 'duration', 30),
+      ],
     });
   }
 
   public adjustCt(percentage: number, duration: number, isBg = false): Promise<YeelightResponseSuccess> {
     return super.command({
       method: isBg ? YeelightMethod.BG_ADJUST_CT : YeelightMethod.ADJUST_CT,
-      params: [clamp(percentage, -100, 100), clamp(duration, 30)],
+      params: [
+        clampProtocolInteger(percentage, 'percentage', -100, 100),
+        clampProtocolInteger(duration, 'duration', 30),
+      ],
     });
   }
 
   public adjustColor(percentage: number, duration: number, isBg = false): Promise<YeelightResponseSuccess> {
     return super.command({
       method: isBg ? YeelightMethod.BG_ADJUST_COLOR : YeelightMethod.ADJUST_COLOR,
-      params: [clamp(percentage, -100, 100), clamp(duration, 30)],
+      params: [
+        clampProtocolInteger(percentage, 'percentage', -100, 100),
+        clampProtocolInteger(duration, 'duration', 30),
+      ],
     });
   }
 }

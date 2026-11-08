@@ -48,6 +48,17 @@ export class YeelightDuplicateCommandIdError extends Error {
   }
 }
 
+export class YeelightValidationError extends TypeError {
+  public readonly field: string;
+
+  constructor(field: string, message: string) {
+    super(`${field}: ${message}`);
+    this.name = 'YeelightValidationError';
+    this.field = field;
+    Object.setPrototypeOf(this, YeelightValidationError.prototype);
+  }
+}
+
 export class YeelightProtocolError extends Error {
   public readonly code: number;
   public readonly commandId: number;

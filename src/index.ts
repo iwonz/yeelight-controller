@@ -6,3 +6,4 @@ export * from './yeelight/errors';
 export * from './yeelight/helpers';
 
 export * from './yeelight/types';
+export * from './yeelight/validation';
