@@ -4,6 +4,7 @@ const test = require('node:test');
 const {
   YeelightDeviceController,
   YeelightMethod,
+  YeelightMusicAction,
   YeelightProps,
 } = require('../dist/cjs');
 const { createFakeYeelight, sendMessage } = require('./support/fake-yeelight');
@@ -58,4 +59,23 @@ test('maps getProps results to their requested property names', async (t) => {
 
   assert.deepEqual(props, { power: 'on', bright: '42' });
   assert.deepEqual(values, ['on', '42']);
+});
+
+test('serializes music mode enable and disable with action-specific parameters', async (t) => {
+  const commands = [];
+  const fixture = await connectController((command) => {
+    commands.push(command);
+    return undefined;
+  });
+  t.after(() => fixture.close());
+
+  await fixture.device.enableMusic('192.168.1.50', 54321);
+  await fixture.device.disableMusic();
+  await fixture.device.setMusic(YeelightMusicAction.TURN_OFF);
+
+  assert.deepEqual(commands.map((command) => command.params), [
+    [1, '192.168.1.50', 54321],
+    [0],
+    [0],
+  ]);
 });

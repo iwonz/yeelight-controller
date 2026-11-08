@@ -255,10 +255,18 @@ export class YeelightDeviceController extends YeelightDevice {
     });
   }
 
-  public setMusic(action: YeelightMusicAction, host: string, port: number): Promise<YeelightResponseSuccess> {
+  public enableMusic(host: string, port: number): Promise<YeelightResponseSuccess> {
+    return this.setMusic(YeelightMusicAction.TURN_ON, host, port);
+  }
+
+  public disableMusic(): Promise<YeelightResponseSuccess> {
+    return this.setMusic(YeelightMusicAction.TURN_OFF);
+  }
+
+  public setMusic(action: YeelightMusicAction, host?: string, port?: number): Promise<YeelightResponseSuccess> {
     return super.command({
       method: YeelightMethod.SET_MUSIC,
-      params: [action, host, port],
+      params: action === YeelightMusicAction.TURN_OFF ? [action] : [action, host, port],
     });
   }
 
