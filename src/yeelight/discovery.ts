@@ -7,26 +7,41 @@ import { YeelightDeviceController } from './device-controller';
 const MULTICAST_IP = '239.255.255.250';
 const MULTICAST_PORT = 1982;
 
+export interface YeelightDiscoveryOptions {
+  socketFactory?: () => dgram.Socket;
+}
+
 export class YeelightDiscovery extends EventEmitter {
   private socket: dgram.Socket | null = null;
   private devices: Map<string, YeelightDeviceController> = new Map();
+  private readonly socketFactory: () => dgram.Socket;
 
-  constructor() {
+  constructor(options: YeelightDiscoveryOptions = {}) {
     super();
 
-    this.socket = dgram.createSocket('udp4');
+    this.socketFactory = options.socketFactory ?? (() => dgram.createSocket('udp4'));
   }
 
   public activate(): void {
-    this.socket?.on('listening', () => {
-      this.socket?.addMembership(MULTICAST_IP);
+    if (this.socket) {
+      return;
+    }
+
+    const socket = this.socketFactory();
+    this.socket = socket;
+
+    socket.on('listening', () => {
+      if (this.socket !== socket) {
+        return;
+      }
+
+      socket.addMembership(MULTICAST_IP);
 
       const buffer = Buffer.from('M-SEARCH * HTTP/1.1\r\nMAN: "ssdp:discover"\r\nST: wifi_bulb\r\n');
-
-      this.socket?.send(buffer, 0, buffer.length, MULTICAST_PORT, MULTICAST_IP);
+      socket.send(buffer, 0, buffer.length, MULTICAST_PORT, MULTICAST_IP);
     });
 
-    this.socket?.on('message', (deviceInfo: string) => {
+    socket.on('message', (deviceInfo: Buffer) => {
       const headers: any = {};
 
       deviceInfo
@@ -47,7 +62,6 @@ export class YeelightDiscovery extends EventEmitter {
       }
 
       const parsedUrl = url.parse(headers.Location);
-
       const device = new YeelightDeviceController({
         id: headers.id,
         model: headers.model,
@@ -59,17 +73,15 @@ export class YeelightDiscovery extends EventEmitter {
       });
 
       this.devices.set(device.getId(), device);
-
       this.emit(YeelightDiscoveryEvents.DISCOVER_DEVICE, device);
 
       device.on(YeelightDeviceEvents.CONNECT, () => {
         this.emit(YeelightDiscoveryEvents.CONNECT_DEVICE, device);
       });
 
-      device.on(YeelightDeviceEvents.DISCONNECT, (error) => {
+      device.on(YeelightDeviceEvents.DISCONNECT, (deviceError) => {
         this.devices.delete(device.getId());
-
-        this.emit(YeelightDiscoveryEvents.DISCONNECT_DEVICE, device, error);
+        this.emit(YeelightDiscoveryEvents.DISCONNECT_DEVICE, device, deviceError);
       });
 
       device.on(YeelightDeviceEvents.PROPS_CHANGE, (props) => {
@@ -80,27 +92,48 @@ export class YeelightDiscovery extends EventEmitter {
         this.emit(YeelightDiscoveryEvents.DEVICE_DATA, device, data);
       });
 
-      device.on(YeelightDeviceEvents.ERROR, (error) => {
-        this.emit(YeelightDiscoveryEvents.DEVICE_ERROR, device, error);
+      device.on(YeelightDeviceEvents.ERROR, (deviceError) => {
+        this.emit(YeelightDiscoveryEvents.DEVICE_ERROR, device, deviceError);
       });
 
-      device.connect();
+      void device.connect().catch((deviceError) => {
+        this.emit(YeelightDiscoveryEvents.DEVICE_ERROR, device, deviceError);
+      });
     });
 
     try {
-      this.socket?.bind(MULTICAST_PORT, () => {
-        this.socket?.setBroadcast(true);
+      socket.bind(MULTICAST_PORT, () => {
+        if (this.socket === socket) {
+          socket.setBroadcast(true);
+        }
       });
     } catch (error) {
-      this.deactivate(error);
+      void this.deactivate(error);
     }
   }
 
-  public deactivate(error?: any): void {
-    this.socket?.disconnect();
+  public async deactivate(error?: any): Promise<void> {
+    const socket = this.socket;
+    const devices = Array.from(this.devices.values());
     this.socket = null;
+    this.devices.clear();
 
-    this.emit(YeelightDiscoveryEvents.DISCONNECT, error);
+    await Promise.all(devices.map((device) => device.close(error instanceof Error ? error : undefined)));
+
+    if (socket) {
+      socket.removeAllListeners();
+      await new Promise<void>((resolve) => {
+        try {
+          socket.close(() => resolve());
+        } catch {
+          resolve();
+        }
+      });
+    }
+
+    if (socket || devices.length > 0 || error) {
+      this.emit(YeelightDiscoveryEvents.DISCONNECT, error);
+    }
   }
 
   public command(command: YeelightCommand): Promise<any[]> {
