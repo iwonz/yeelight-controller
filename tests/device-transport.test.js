@@ -6,6 +6,7 @@ const {
   YeelightDevice,
   YeelightDeviceEvents,
   YeelightMethod,
+  YeelightProtocolError,
 } = require('../dist/cjs');
 const { createFakeYeelight, sendMessage } = require('./support/fake-yeelight');
 
@@ -82,4 +83,25 @@ test('parses multiple responses in one TCP chunk', async (t) => {
   );
 
   assert.deepEqual(results, [['ok'], ['ok']]);
+});
+
+test('rejects command promises with device error details', async (t) => {
+  const fixture = await connectDevice((command, socket) => {
+    sendMessage(socket, {
+      id: command.id,
+      error: { code: -1, message: 'unsupported method' },
+    });
+  });
+  t.after(() => fixture.close());
+
+  await assert.rejects(
+    withTimeout(fixture.device.command({ method: YeelightMethod.TOGGLE, params: [] })),
+    (error) => {
+      assert.ok(error instanceof YeelightProtocolError);
+      assert.equal(error.code, -1);
+      assert.equal(error.message, 'unsupported method');
+      assert.equal(error.commandId, 2);
+      return true;
+    },
+  );
 });

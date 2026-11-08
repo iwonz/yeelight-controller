@@ -8,6 +8,12 @@ import {
   YeelightDeviceProps,
   YeelightMethod,
 } from './types';
+import { YeelightProtocolError } from './errors';
+
+interface PendingCommand {
+  resolve: (value: any) => void;
+  reject: (reason: any) => void;
+}
 
 export class YeelightDevice extends EventEmitter {
   private socket: net.Socket | null = null;
@@ -16,7 +22,7 @@ export class YeelightDevice extends EventEmitter {
   private props: YeelightDeviceProps = {};
   private responseBuffer = Buffer.alloc(0);
 
-  private commandPromiseResolvers: Map<number, (value: any) => void> = new Map();
+  private pendingCommands: Map<number, PendingCommand> = new Map();
   private commandId = 0;
 
   constructor(state: YeelightDeviceInfo) {
@@ -43,9 +49,15 @@ export class YeelightDevice extends EventEmitter {
 
               this.emit(YeelightDeviceEvents.DATA, response);
 
-              if (response.id && this.commandPromiseResolvers.has(response.id)) {
-                this.commandPromiseResolvers.get(response.id)?.(response.result);
-                this.commandPromiseResolvers.delete(response.id);
+              if (response.id && this.pendingCommands.has(response.id)) {
+                const pendingCommand = this.pendingCommands.get(response.id);
+                this.pendingCommands.delete(response.id);
+
+                if (response.error) {
+                  pendingCommand?.reject(new YeelightProtocolError(response.id, response.error));
+                } else {
+                  pendingCommand?.resolve(response.result);
+                }
               }
 
               if (response?.method === 'props') {
@@ -115,7 +127,7 @@ export class YeelightDevice extends EventEmitter {
           }) + '\r\n',
         );
 
-        this.commandPromiseResolvers.set(id, resolve);
+        this.pendingCommands.set(id, { resolve, reject });
       } catch (error) {
         reject(error);
       }
