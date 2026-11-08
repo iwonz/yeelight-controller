@@ -1,4 +1,4 @@
-import { YeelightDevice, YeelightDeviceOptions } from './device';
+import { YeelightDeviceOptions, YeelightDeviceTransport } from './device-transport';
 import {
   YeelightAdjustAction,
   YeelightAdjustProp,
@@ -26,7 +26,7 @@ import {
 } from './validation';
 import { YeelightValidationError } from './errors';
 
-export class YeelightDeviceController extends YeelightDevice {
+export class YeelightDevice extends YeelightDeviceTransport {
   constructor(state: YeelightDeviceInfo, options: YeelightDeviceOptions = {}) {
     super(state, options);
   }
@@ -379,3 +379,5 @@ export class YeelightDeviceController extends YeelightDevice {
     });
   }
 }
+
+export { YeelightDevice as YeelightDeviceController };

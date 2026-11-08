@@ -3,7 +3,7 @@ import dgram from 'dgram';
 import { YeelightCommand, YeelightDeviceEvents, YeelightDiscoveryEvents, YeelightMethod } from './types';
 import { YeelightDeviceController } from './device-controller';
 import { parseYeelightDiscoveryMessage } from './discovery-message';
-import { YeelightDeviceOptions } from './device';
+import { YeelightDeviceOptions } from './device-transport';
 
 const MULTICAST_IP = '239.255.255.250';
 const MULTICAST_PORT = 1982;

@@ -124,7 +124,7 @@ import { YeelightDevice, YeelightDeviceEvents } from '@iwonz/yeelight-controller
 
 const device = new YeelightDevice({
   host: 'DEVICE_HOST',
-  port: 'DEVICE_PORT',
+  port: 55443,
 });
 
 device.on(YeelightDeviceEvents.CONNECT, () => {
@@ -140,27 +140,27 @@ import { YeelightDevice, YeelightDeviceEvents } from '@iwonz/yeelight-controller
 
 const device = new YeelightDevice({
   host: 'DEVICE_HOST',
-  port: 'DEVICE_PORT',
+  port: 55443,
 });
 
-discovery.on(YeelightDeviceEvents.CONNECT, () => {
+device.on(YeelightDeviceEvents.CONNECT, () => {
   // Here you can manipulate with device
 });
 
-discovery.on(YeelightDeviceEvents.DISCONNECT, (error) => {
+device.on(YeelightDeviceEvents.DISCONNECT, (error) => {
   // error can be null
   // Called then device disconnected
 });
 
-discovery.on(YeelightDeviceEvents.PROPS_CHANGE, (props) => {
+device.on(YeelightDeviceEvents.PROPS_CHANGE, (props) => {
   // Called then device change props
 });
 
-discovery.on(YeelightDeviceEvents.DEVICE_DATA, (data) => {
+device.on(YeelightDeviceEvents.DATA, (data) => {
   // Allow you to get all parsed data from device socket
 });
 
-discovery.on(YeelightDeviceEvents.DEVICE_ERROR, (error) => {
+device.on(YeelightDeviceEvents.ERROR, (error) => {
   // Allow you to get errors from device socket
 });
 
