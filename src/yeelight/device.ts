@@ -8,11 +8,21 @@ import {
   YeelightDeviceProps,
   YeelightMethod,
 } from './types';
-import { YeelightProtocolError } from './errors';
+import {
+  YeelightCommandTimeoutError,
+  YeelightConnectionClosedError,
+  YeelightNotConnectedError,
+  YeelightProtocolError,
+} from './errors';
 
 interface PendingCommand {
   resolve: (value: any) => void;
   reject: (reason: any) => void;
+  timeout: NodeJS.Timeout;
+}
+
+export interface YeelightDeviceOptions {
+  commandTimeout?: number;
 }
 
 export class YeelightDevice extends EventEmitter {
@@ -24,11 +34,13 @@ export class YeelightDevice extends EventEmitter {
 
   private pendingCommands: Map<number, PendingCommand> = new Map();
   private commandId = 0;
+  private readonly commandTimeout: number;
 
-  constructor(state: YeelightDeviceInfo) {
+  constructor(state: YeelightDeviceInfo, options: YeelightDeviceOptions = {}) {
     super();
 
     this.device = state;
+    this.commandTimeout = options.commandTimeout ?? 5000;
   }
 
   public connect(): void {
@@ -52,6 +64,9 @@ export class YeelightDevice extends EventEmitter {
               if (response.id && this.pendingCommands.has(response.id)) {
                 const pendingCommand = this.pendingCommands.get(response.id);
                 this.pendingCommands.delete(response.id);
+                if (pendingCommand) {
+                  clearTimeout(pendingCommand.timeout);
+                }
 
                 if (response.error) {
                   pendingCommand?.reject(new YeelightProtocolError(response.id, response.error));
@@ -76,6 +91,7 @@ export class YeelightDevice extends EventEmitter {
 
       this.socket.on('error', (error: any) => {
         this.emit(YeelightDeviceEvents.ERROR, error);
+        this.disconnect(error);
       });
 
       this.socket.on('end', () => {
@@ -106,6 +122,16 @@ export class YeelightDevice extends EventEmitter {
     this.socket = null;
     this.responseBuffer = Buffer.alloc(0);
 
+    const connectionError =
+      error instanceof YeelightConnectionClosedError
+        ? error
+        : new YeelightConnectionClosedError(error instanceof Error ? error : undefined);
+    this.pendingCommands.forEach((pendingCommand) => {
+      clearTimeout(pendingCommand.timeout);
+      pendingCommand.reject(connectionError);
+    });
+    this.pendingCommands.clear();
+
     this.emit(YeelightDeviceEvents.DISCONNECT, error);
   };
 
@@ -116,19 +142,31 @@ export class YeelightDevice extends EventEmitter {
       );
     }
 
-    return new Promise((resolve, reject) => {
-      try {
-        const id = command.id || this.processCommandId();
+    const socket = this.socket;
+    if (!socket || socket.destroyed || !socket.writable) {
+      return Promise.reject(new YeelightNotConnectedError());
+    }
 
-        this.socket?.write(
+    return new Promise((resolve, reject) => {
+      const id = command.id || this.processCommandId();
+      const timeout = setTimeout(() => {
+        if (this.pendingCommands.delete(id)) {
+          reject(new YeelightCommandTimeoutError(id, command.method, this.commandTimeout));
+        }
+      }, this.commandTimeout);
+
+      this.pendingCommands.set(id, { resolve, reject, timeout });
+
+      try {
+        socket.write(
           JSON.stringify({
             id,
             ...command,
           }) + '\r\n',
         );
-
-        this.pendingCommands.set(id, { resolve, reject });
       } catch (error) {
+        clearTimeout(timeout);
+        this.pendingCommands.delete(id);
         reject(error);
       }
     });
